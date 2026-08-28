@@ -246,6 +246,13 @@
 
 /* ===== Responsive HP / Tablet ===== */
 
+/* KUNCI: anak grid/flex bawaan punya min-width auto sehingga tabel lebar
+   mendorong seluruh halaman melebar di HP. Paksa boleh menyusut agar
+   scroll terjadi DI DALAM kartu (overflow-x-auto), bukan di seluruh layar. */
+.grid > *, .flex > * { min-width: 0; }
+.form-input { min-width: 0; }
+main { overflow-x: hidden; }
+
 /* Scroll horizontal halus untuk tabel & tab di layar sentuh */
 .overflow-x-auto { -webkit-overflow-scrolling: touch; }
 #tab-nav { -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
@@ -255,8 +262,14 @@
 @media (max-width: 640px) {
   /* Tabel data: paksa lebar minimum agar bisa di-scroll ke samping, bukan berantakan */
   .data-table { min-width: 560px; }
+  /* Tabel lebar (rekonsiliasi stok 7 kolom) butuh ruang lebih */
+  #table-stok { min-width: 620px; }
+  /* Tabel ramping tidak perlu dipaksa lebar */
+  #table-penyesuaian, #table-pemasukan, #table-pesanan-item { min-width: 460px; }
   .data-table th { padding: 0.45rem 0.4rem; font-size: 0.68rem; }
   .data-table td { padding: 0.5rem 0.4rem; font-size: 0.8rem; }
+  .data-table td, .data-table th { white-space: nowrap; }
+  .data-table td span, .data-table td .text-xs { white-space: normal; }
 
   /* Tab navigasi lebih rapat namun tetap mudah disentuh */
   .tab-btn { padding: 0.6rem 0.75rem; font-size: 0.78rem; }
