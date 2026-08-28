@@ -28,9 +28,9 @@ async function api(url, opts = {}) {
     document.getElementById('user-nama').textContent = user.nama;
     document.getElementById('user-role').textContent = user.role;
 
-    // Tampilkan tab sesuai role
-    document.querySelectorAll('.tab-btn[data-roles]').forEach((btn) => {
-      if (btn.dataset.roles.split(',').includes(user.role)) btn.classList.remove('hidden');
+    // Tampilkan tab & judul grup sidebar sesuai role
+    document.querySelectorAll('[data-roles]').forEach((el) => {
+      if (el.dataset.roles.split(',').includes(user.role)) el.classList.remove('hidden');
     });
 
     ['panen-tanggal', 'jual-tanggal', 'bg-tanggal', 'kj-tanggal', 'kl-tanggal', 'pm-tanggal', 'po-tgl-pesan', 'po-tgl-kirim', 'st-tanggal'].forEach((id) => {
@@ -45,6 +45,16 @@ async function api(url, opts = {}) {
   } catch (e) { /* redirect ke login sudah ditangani */ }
 })();
 
+// ---------- Sidebar (HP: drawer, laptop: tetap) ----------
+const sidebar = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+function bukaSidebar() { sidebar.classList.add('open'); sidebarOverlay.classList.remove('hidden'); }
+function tutupSidebar() { sidebar.classList.remove('open'); sidebarOverlay.classList.add('hidden'); }
+document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+  sidebar.classList.contains('open') ? tutupSidebar() : bukaSidebar();
+});
+sidebarOverlay?.addEventListener('click', tutupSidebar);
+
 // ---------- Navigasi tab ----------
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -54,6 +64,8 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
     const loaders = { dashboard: loadRingkasan, baglog: loadBaglog, panen: loadPanen, penjualan: loadPenjualan, pesanan: loadPesanan, stok: loadStok, piutang: loadPiutang, pelanggan: loadPelanggan, keuangan: loadKeuangan, laporan: loadLaporan, produk: loadProduk, pengguna: loadUsers, pengaturan: loadPengaturan };
     loaders[btn.dataset.tab]?.();
+    tutupSidebar(); // di HP: tutup drawer setelah memilih menu
+    window.scrollTo({ top: 0 });
   });
 });
 

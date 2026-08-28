@@ -93,18 +93,23 @@ export const adminPage = () => `<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Header -->
-  <header class="bg-sumi text-washi sticky top-0 z-40 shadow-lg">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-      <a href="/" class="flex items-center gap-3">
-        <img src="/static/logo-hiratake.png" alt="Logo" class="w-10 h-10 rounded-full ring-1 ring-white/20">
-        <div>
-          <span class="font-serifjp font-bold">HIRATAKE</span>
-          <span class="block text-[10px] text-kin tracking-widest -mt-0.5">PANEL PENGELOLAAN・管理</span>
-        </div>
-      </a>
-      <div class="flex items-center gap-4">
-        <div class="text-right hidden sm:block">
+  <!-- Header atas -->
+  <header class="bg-sumi text-washi fixed top-0 left-0 right-0 z-40 shadow-lg h-16">
+    <div class="h-full px-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <button id="sidebar-toggle" class="lg:hidden text-xl w-10 h-10 rounded-lg hover:bg-white/10 transition" aria-label="Buka menu">
+          <i class="fas fa-bars"></i>
+        </button>
+        <a href="/" class="flex items-center gap-3">
+          <img src="/static/logo-hiratake.png" alt="Logo" class="w-10 h-10 rounded-full ring-1 ring-white/20">
+          <div class="hidden sm:block">
+            <span class="font-serifjp font-bold">HIRATAKE</span>
+            <span class="block text-[10px] text-kin tracking-widest -mt-0.5">PANEL PENGELOLAAN・管理</span>
+          </div>
+        </a>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="text-right">
           <p id="user-nama" class="text-sm font-semibold"></p>
           <p id="user-role" class="text-[11px] text-kin uppercase tracking-wider"></p>
         </div>
@@ -113,25 +118,35 @@ export const adminPage = () => `<!DOCTYPE html>
         </button>
       </div>
     </div>
-    <!-- Tab navigasi -->
-    <nav class="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto" id="tab-nav">
-      <button data-tab="dashboard" class="tab-btn active"><i class="fas fa-chart-line mr-1"></i>Ringkasan</button>
-      <button data-tab="baglog" class="tab-btn"><i class="fas fa-cubes mr-1"></i>Baglog</button>
-      <button data-tab="panen" class="tab-btn"><i class="fas fa-wheat-awn mr-1"></i>Panen</button>
-      <button data-tab="penjualan" class="tab-btn"><i class="fas fa-cash-register mr-1"></i>Penjualan</button>
-      <button data-tab="pesanan" class="tab-btn"><i class="fas fa-clipboard-list mr-1"></i>Pesanan</button>
-      <button data-tab="stok" class="tab-btn"><i class="fas fa-boxes-stacked mr-1"></i>Stok</button>
-      <button data-tab="piutang" class="tab-btn"><i class="fas fa-file-invoice-dollar mr-1"></i>Piutang</button>
-      <button data-tab="pelanggan" class="tab-btn"><i class="fas fa-address-book mr-1"></i>Pelanggan</button>
-      <button data-tab="keuangan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-wallet mr-1"></i>Keuangan</button>
-      <button data-tab="laporan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-file-lines mr-1"></i>Laporan</button>
-      <button data-tab="produk" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-box mr-1"></i>Produk</button>
-      <button data-tab="pengguna" class="tab-btn hidden" data-roles="owner"><i class="fas fa-users mr-1"></i>Pengguna</button>
-      <button data-tab="pengaturan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-gear mr-1"></i>Web</button>
-    </nav>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 py-6">
+  <!-- Overlay gelap saat sidebar terbuka di HP -->
+  <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
+
+  <!-- Sidebar navigasi -->
+  <aside id="sidebar" class="sidebar bg-sumi text-washi" aria-label="Navigasi utama">
+    <nav id="tab-nav" class="flex flex-col gap-1 p-3">
+      <p class="sidebar-group">Operasional</p>
+      <button data-tab="dashboard" class="tab-btn active"><i class="fas fa-chart-line"></i>Ringkasan</button>
+      <button data-tab="baglog" class="tab-btn"><i class="fas fa-cubes"></i>Baglog</button>
+      <button data-tab="panen" class="tab-btn"><i class="fas fa-wheat-awn"></i>Panen</button>
+      <button data-tab="penjualan" class="tab-btn"><i class="fas fa-cash-register"></i>Penjualan</button>
+      <button data-tab="pesanan" class="tab-btn"><i class="fas fa-clipboard-list"></i>Pesanan</button>
+      <button data-tab="stok" class="tab-btn"><i class="fas fa-boxes-stacked"></i>Stok</button>
+      <p class="sidebar-group">Pelanggan & Tagihan</p>
+      <button data-tab="piutang" class="tab-btn"><i class="fas fa-file-invoice-dollar"></i>Piutang</button>
+      <button data-tab="pelanggan" class="tab-btn"><i class="fas fa-address-book"></i>Pelanggan</button>
+      <p class="sidebar-group hidden" data-roles="owner,admin">Keuangan</p>
+      <button data-tab="keuangan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-wallet"></i>Keuangan</button>
+      <button data-tab="laporan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-file-lines"></i>Laporan</button>
+      <p class="sidebar-group hidden" data-roles="owner,admin">Pengelolaan</p>
+      <button data-tab="produk" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-box"></i>Produk</button>
+      <button data-tab="pengguna" class="tab-btn hidden" data-roles="owner"><i class="fas fa-users"></i>Pengguna</button>
+      <button data-tab="pengaturan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-gear"></i>Website</button>
+    </nav>
+  </aside>
+
+  <main id="main-content" class="main-content px-4 py-6">
     <!-- Tab: Ringkasan -->
     <section id="tab-dashboard" class="tab-panel">
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="stat-cards"></div>

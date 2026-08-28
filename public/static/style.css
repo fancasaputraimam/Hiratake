@@ -206,17 +206,58 @@
   transform: translateY(-3px);
 }
 
-/* ===== Dashboard Admin ===== */
-.tab-btn {
-  padding: 0.65rem 1.1rem;
-  font-size: 0.85rem;
-  color: rgba(247, 243, 234, 0.6);
-  border-bottom: 3px solid transparent;
-  white-space: nowrap;
-  transition: color 0.2s ease, border-color 0.2s ease;
+/* ===== Dashboard Admin — Sidebar ===== */
+.sidebar {
+  position: fixed;
+  top: 4rem; /* di bawah header 64px */
+  left: 0;
+  bottom: 0;
+  width: 15rem;
+  z-index: 45;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  transition: transform 0.25s ease;
+  box-shadow: 4px 0 18px rgba(0, 0, 0, 0.12);
 }
-.tab-btn:hover { color: #F7F3EA; }
-.tab-btn.active { color: #F7F3EA; border-bottom-color: #C73E3A; font-weight: 600; }
+.sidebar-group {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(201, 162, 39, 0.85);
+  padding: 0.9rem 0.85rem 0.25rem;
+  user-select: none;
+}
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.875rem;
+  border-radius: 0.6rem;
+  color: rgba(247, 243, 234, 0.65);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.tab-btn i { width: 1.25rem; text-align: center; font-size: 0.95rem; }
+.tab-btn:hover { color: #F7F3EA; background: rgba(255, 255, 255, 0.07); }
+.tab-btn.active {
+  color: #fff;
+  background: #C73E3A;
+  font-weight: 600;
+  box-shadow: 0 3px 10px rgba(199, 62, 58, 0.35);
+}
+
+/* Konten utama: beri ruang untuk header & sidebar */
+.main-content { margin-top: 4rem; }
+@media (min-width: 1024px) {
+  .main-content { margin-left: 15rem; }
+  .sidebar { transform: none !important; } /* selalu terlihat di laptop */
+}
+@media (max-width: 1023.98px) {
+  .sidebar { transform: translateX(-100%); } /* tersembunyi di HP */
+  .sidebar.open { transform: translateX(0); }
+}
 
 .stat-card {
   background: #fff;
@@ -253,11 +294,8 @@
 .form-input { min-width: 0; }
 main { overflow-x: hidden; }
 
-/* Scroll horizontal halus untuk tabel & tab di layar sentuh */
+/* Scroll horizontal halus untuk tabel di layar sentuh */
 .overflow-x-auto { -webkit-overflow-scrolling: touch; }
-#tab-nav { -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
-#tab-nav::-webkit-scrollbar { height: 3px; }
-#tab-nav::-webkit-scrollbar-thumb { background: rgba(199, 62, 58, 0.5); border-radius: 3px; }
 
 @media (max-width: 640px) {
   /* Tabel data: paksa lebar minimum agar bisa di-scroll ke samping, bukan berantakan */
@@ -270,9 +308,6 @@ main { overflow-x: hidden; }
   .data-table td { padding: 0.5rem 0.4rem; font-size: 0.8rem; }
   .data-table td, .data-table th { white-space: nowrap; }
   .data-table td span, .data-table td .text-xs { white-space: normal; }
-
-  /* Tab navigasi lebih rapat namun tetap mudah disentuh */
-  .tab-btn { padding: 0.6rem 0.75rem; font-size: 0.78rem; }
 
   /* Kartu statistik lebih ringkas */
   .stat-card { padding: 0.85rem; border-radius: 0.85rem; }
