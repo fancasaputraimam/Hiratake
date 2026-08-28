@@ -493,7 +493,7 @@ app.post('/api/admin/penjualan', requireAuth(), async (c) => {
   const bayar = status_bayar === 'tempo' ? 'tempo' : 'lunas'
   if (bayar === 'tempo' && !jatuh_tempo) return c.json({ error: 'Penjualan tempo wajib diisi tanggal jatuh tempo.' }, 400)
   if (bayar === 'tempo' && !pelanggan_id) return c.json({ error: 'Penjualan tempo wajib pilih pelanggan terdaftar (untuk penagihan).' }, 400)
-  const p = await c.env.DB.prepare('SELECT nama, harga FROM produk WHERE id = ?').bind(produk_id).first<any>()
+  const p = await c.env.DB.prepare('SELECT nama, harga, berat_kg FROM produk WHERE id = ?').bind(produk_id).first<any>()
   if (!p) return c.json({ error: 'Produk tidak ditemukan.' }, 404)
   let namaPembeli = pembeli || ''
   if (pelanggan_id) {
@@ -502,9 +502,9 @@ app.post('/api/admin/penjualan', requireAuth(), async (c) => {
     namaPembeli = pl.nama
   }
   await c.env.DB.prepare(
-    'INSERT INTO penjualan (tanggal, produk_id, nama_produk, jumlah, total, pembeli, pelanggan_id, status_bayar, jatuh_tempo, tanggal_lunas, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO penjualan (tanggal, produk_id, nama_produk, jumlah, total, pembeli, pelanggan_id, status_bayar, jatuh_tempo, tanggal_lunas, berat_kg, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(tanggal, produk_id, p.nama, jumlah, p.harga * jumlah, namaPembeli, pelanggan_id || null, bayar,
-    bayar === 'tempo' ? jatuh_tempo : null, bayar === 'lunas' ? tanggal : null, c.get('user').id).run()
+    bayar === 'tempo' ? jatuh_tempo : null, bayar === 'lunas' ? tanggal : null, (p.berat_kg || 0) * jumlah, c.get('user').id).run()
   return c.json({ sukses: true })
 })
 
@@ -527,19 +527,19 @@ app.get('/api/admin/produk', requireAuth(['owner', 'admin']), async (c) => {
 })
 
 app.post('/api/admin/produk', requireAuth(['owner', 'admin']), async (c) => {
-  const { nama, jp, harga, satuan, deskripsi, badge } = await c.req.json()
+  const { nama, jp, harga, satuan, deskripsi, badge, berat_kg } = await c.req.json()
   if (!nama || harga == null || !satuan) return c.json({ error: 'Nama, harga, dan satuan wajib diisi.' }, 400)
   await c.env.DB.prepare(
-    'INSERT INTO produk (nama, jp, harga, satuan, deskripsi, badge) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null).run()
+    'INSERT INTO produk (nama, jp, harga, satuan, deskripsi, badge, berat_kg) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null, berat_kg || 0).run()
   return c.json({ sukses: true })
 })
 
 app.put('/api/admin/produk/:id', requireAuth(['owner', 'admin']), async (c) => {
-  const { nama, jp, harga, satuan, deskripsi, badge, aktif } = await c.req.json()
+  const { nama, jp, harga, satuan, deskripsi, badge, aktif, berat_kg } = await c.req.json()
   await c.env.DB.prepare(
-    'UPDATE produk SET nama=?, jp=?, harga=?, satuan=?, deskripsi=?, badge=?, aktif=? WHERE id=?'
-  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null, aktif ? 1 : 0, c.req.param('id')).run()
+    'UPDATE produk SET nama=?, jp=?, harga=?, satuan=?, deskripsi=?, badge=?, aktif=?, berat_kg=? WHERE id=?'
+  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null, aktif ? 1 : 0, berat_kg || 0, c.req.param('id')).run()
   return c.json({ sukses: true })
 })
 
