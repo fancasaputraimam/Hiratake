@@ -33,7 +33,7 @@ async function api(url, opts = {}) {
       if (btn.dataset.roles.split(',').includes(user.role)) btn.classList.remove('hidden');
     });
 
-    ['panen-tanggal', 'jual-tanggal', 'bg-tanggal', 'kj-tanggal'].forEach((id) => {
+    ['panen-tanggal', 'jual-tanggal', 'bg-tanggal', 'kj-tanggal', 'kl-tanggal', 'pm-tanggal'].forEach((id) => {
       const el = document.getElementById(id); if (el) el.value = hariIni();
     });
 
@@ -52,7 +52,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.classList.add('active');
     document.querySelectorAll('.tab-panel').forEach((p) => p.classList.add('hidden'));
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
-    const loaders = { dashboard: loadRingkasan, baglog: loadBaglog, panen: loadPanen, penjualan: loadPenjualan, piutang: loadPiutang, pelanggan: loadPelanggan, produk: loadProduk, pengguna: loadUsers, pengaturan: loadPengaturan };
+    const loaders = { dashboard: loadRingkasan, baglog: loadBaglog, panen: loadPanen, penjualan: loadPenjualan, piutang: loadPiutang, pelanggan: loadPelanggan, keuangan: loadKeuangan, laporan: loadLaporan, produk: loadProduk, pengguna: loadUsers, pengaturan: loadPengaturan };
     loaders[btn.dataset.tab]?.();
   });
 });
@@ -401,6 +401,137 @@ document.getElementById('form-pelanggan')?.addEventListener('submit', async (e) 
     loadPelanggan(); loadPelangganDropdown();
   } catch (ex) { toast(ex.message, false); }
 });
+
+// ---------- Keuangan ----------
+const LABEL_KATEGORI = {
+  bahan_baku: 'Bahan Baku', bibit: 'Bibit', gas_sterilisasi: 'Gas/Sterilisasi', listrik_air: 'Listrik & Air',
+  gaji: 'Gaji', transport: 'Transport/BBM', kemasan: 'Kemasan', perawatan: 'Perawatan', lainnya: 'Lainnya'
+};
+
+async function loadKeuangan() {
+  const [{ pengeluaran }, { pemasukan }] = await Promise.all([
+    api('/api/admin/pengeluaran'), api('/api/admin/pemasukan-lain')
+  ]);
+  document.getElementById('table-pengeluaran').innerHTML = `
+    <thead><tr><th>Tanggal</th><th>Kategori</th><th>Jumlah</th><th>Keterangan</th><th>Pencatat</th><th></th></tr></thead>
+    <tbody>${pengeluaran.map((p) => `
+      <tr>
+        <td>${p.tanggal}</td>
+        <td><span class="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded-full">${LABEL_KATEGORI[p.kategori] || p.kategori}</span></td>
+        <td class="font-semibold" style="color:#C73E3A">${rupiah(p.jumlah)}</td>
+        <td>${p.keterangan || '-'}</td><td>${p.pencatat || '-'}</td>
+        <td><button onclick="hapusPengeluaran(${p.id})" class="text-red-400 hover:text-red-600" title="Hapus"><i class="fas fa-trash"></i></button></td>
+      </tr>`).join('') || '<tr><td colspan="6" class="text-center text-gray-400 py-4">Belum ada pengeluaran tercatat</td></tr>'}</tbody>`;
+  document.getElementById('table-pemasukan').innerHTML = `
+    <thead><tr><th>Tanggal</th><th>Jumlah</th><th>Keterangan</th><th>Pencatat</th><th></th></tr></thead>
+    <tbody>${pemasukan.map((p) => `
+      <tr>
+        <td>${p.tanggal}</td>
+        <td class="font-semibold" style="color:#7A8450">${rupiah(p.jumlah)}</td>
+        <td>${p.keterangan || '-'}</td><td>${p.pencatat || '-'}</td>
+        <td><button onclick="hapusPemasukan(${p.id})" class="text-red-400 hover:text-red-600" title="Hapus"><i class="fas fa-trash"></i></button></td>
+      </tr>`).join('') || '<tr><td colspan="5" class="text-center text-gray-400 py-4">Belum ada pemasukan lain</td></tr>'}</tbody>`;
+}
+
+document.getElementById('form-pengeluaran')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/admin/pengeluaran', { method: 'POST', body: JSON.stringify({
+      tanggal: document.getElementById('kl-tanggal').value,
+      kategori: document.getElementById('kl-kategori').value,
+      jumlah: parseInt(document.getElementById('kl-jumlah').value),
+      keterangan: document.getElementById('kl-ket').value.trim()
+    })});
+    toast('Pengeluaran dicatat 💸');
+    document.getElementById('kl-jumlah').value = ''; document.getElementById('kl-ket').value = '';
+    loadKeuangan();
+  } catch (ex) { toast(ex.message, false); }
+});
+
+document.getElementById('form-pemasukan')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/admin/pemasukan-lain', { method: 'POST', body: JSON.stringify({
+      tanggal: document.getElementById('pm-tanggal').value,
+      jumlah: parseInt(document.getElementById('pm-jumlah').value),
+      keterangan: document.getElementById('pm-ket').value.trim()
+    })});
+    toast('Pemasukan dicatat 💰');
+    document.getElementById('pm-jumlah').value = ''; document.getElementById('pm-ket').value = '';
+    loadKeuangan();
+  } catch (ex) { toast(ex.message, false); }
+});
+
+window.hapusPengeluaran = async (id) => {
+  if (!confirm('Hapus catatan pengeluaran ini?')) return;
+  try { await api('/api/admin/pengeluaran/' + id, { method: 'DELETE' }); toast('Dihapus'); loadKeuangan(); }
+  catch (ex) { toast(ex.message, false); }
+};
+window.hapusPemasukan = async (id) => {
+  if (!confirm('Hapus catatan pemasukan ini?')) return;
+  try { await api('/api/admin/pemasukan-lain/' + id, { method: 'DELETE' }); toast('Dihapus'); loadKeuangan(); }
+  catch (ex) { toast(ex.message, false); }
+};
+
+// ---------- Laporan ----------
+let chartKategori;
+async function loadLaporan() {
+  const inputBulan = document.getElementById('laporan-bulan');
+  if (!inputBulan.value) inputBulan.value = hariIni().slice(0, 7);
+  const d = await api('/api/admin/laporan?bulan=' + inputBulan.value);
+
+  const untung = d.labaRugi >= 0;
+  document.getElementById('laporan-cards').innerHTML = `
+    <div class="stat-card"><i class="fas fa-arrow-trend-up text-matcha"></i><p class="stat-val">${rupiah(d.totalPemasukan)}</p><p class="stat-label">Total Pemasukan (omzet + lain)</p></div>
+    <div class="stat-card"><i class="fas fa-arrow-trend-down" style="color:#C73E3A"></i><p class="stat-val">${rupiah(d.totalPengeluaran)}</p><p class="stat-label">Total Pengeluaran</p></div>
+    <div class="stat-card ${untung ? '' : 'bg-red-50'}"><i class="fas fa-scale-balanced ${untung ? 'text-matcha' : 'text-red-500'}"></i><p class="stat-val ${untung ? '' : 'text-red-600'}" style="${untung ? 'color:#7A8450' : ''}">${untung ? '+' : ''}${rupiah(d.labaRugi)}</p><p class="stat-label">${untung ? 'LABA' : 'RUGI'} Bulan Ini</p></div>
+    <div class="stat-card"><i class="fas fa-tag text-kin"></i><p class="stat-val">${rupiah(d.hppPerKg)}/kg</p><p class="stat-label">HPP per Kg Panen</p></div>`;
+
+  // Grafik pengeluaran per kategori
+  chartKategori?.destroy();
+  const kat = d.pengeluaranPerKategori;
+  chartKategori = new Chart(document.getElementById('chart-kategori'), {
+    type: 'doughnut',
+    data: {
+      labels: kat.map((k) => LABEL_KATEGORI[k.kategori] || k.kategori),
+      datasets: [{ data: kat.map((k) => k.v), backgroundColor: ['#C73E3A','#C9A227','#7A8450','#2B2B2B','#8A6BBE','#D97706','#0891B2','#DB2777','#9CA3AF'] }]
+    },
+    options: { plugins: { legend: { position: 'right' } } }
+  });
+
+  // Tabel rinci
+  const baris = (label, nilai, cls = '') => `<tr class="border-b border-gray-100"><td class="py-2">${label}</td><td class="py-2 text-right font-semibold ${cls}">${nilai}</td></tr>`;
+  document.getElementById('laporan-rinci').innerHTML =
+    baris('Omzet penjualan (' + d.jumlahNota + ' nota)', rupiah(d.omzet)) +
+    baris('Pemasukan lain', rupiah(d.pemasukanLain)) +
+    baris('Total pengeluaran', '− ' + rupiah(d.totalPengeluaran), 'text-red-600') +
+    baris(d.labaRugi >= 0 ? 'LABA' : 'RUGI', rupiah(Math.abs(d.labaRugi)), d.labaRugi >= 0 ? 'text-green-700' : 'text-red-600') +
+    baris('Kas benar-benar masuk (lunas)', rupiah(d.kasMasuk)) +
+    baris('Omzet masih piutang', rupiah(d.piutangBulanIni), d.piutangBulanIni > 0 ? 'text-orange-600' : '') +
+    baris('Panen bulan ini', d.panenKg + ' kg') +
+    baris('Susut', d.susutKg + ' kg (' + d.susutPersen + '%)', d.susutPersen > 5 ? 'text-red-600' : '') +
+    baris('Investasi baglog baru (' + d.baglogBaruJumlah + ' pcs)', rupiah(d.investasiBaglog)) +
+    baris('Rata-rata harga jual per kg', rupiah(d.rataHargaJualPerKg)) +
+    baris('HPP per kg', rupiah(d.hppPerKg), d.hppPerKg > d.rataHargaJualPerKg && d.rataHargaJualPerKg > 0 ? 'text-red-600' : '');
+
+  // Insight otomatis
+  const insights = [];
+  if (d.rataHargaJualPerKg > 0 && d.hppPerKg > 0) {
+    const margin = d.rataHargaJualPerKg - d.hppPerKg;
+    insights.push(margin >= 0
+      ? `✅ Margin kotor Anda <strong>${rupiah(margin)}/kg</strong> (jual ${rupiah(d.rataHargaJualPerKg)} vs HPP ${rupiah(d.hppPerKg)}).`
+      : `⚠️ <strong>Harga jual di bawah HPP!</strong> Rugi ${rupiah(-margin)}/kg. Naikkan harga atau tekan biaya.`);
+  }
+  if (d.susutPersen > 5) insights.push(`⚠️ Susut ${d.susutPersen}% tergolong tinggi (wajar < 5%). Percepat distribusi atau olah jadi produk crispy.`);
+  else if (d.panenKg > 0) insights.push(`✅ Susut ${d.susutPersen}% — masih wajar.`);
+  if (d.piutangBulanIni > 0 && d.omzet > 0 && d.piutangBulanIni / d.omzet > 0.3) insights.push(`⚠️ ${Math.round(d.piutangBulanIni / d.omzet * 100)}% omzet masih piutang. Rajin tagih lewat tab Piutang!`);
+  if (d.kontaminasiBulanIni > 0) insights.push(`🦠 Kontaminasi bulan ini: <strong>${d.kontaminasiBulanIni} baglog</strong>. Cek sterilisasi & kebersihan kumbung.`);
+  if (kat.length === 0 && d.omzet > 0) insights.push(`💡 Belum ada pengeluaran tercatat bulan ini — catat semua biaya agar laba/rugi & HPP akurat.`);
+  if (!insights.length) insights.push('Belum cukup data untuk analisis. Mulai catat panen, penjualan, dan pengeluaran.');
+  document.getElementById('laporan-insight').innerHTML = insights.map((i) => `<li class="bg-washi rounded-lg px-4 py-2.5">${i}</li>`).join('');
+}
+
+document.getElementById('laporan-muat')?.addEventListener('click', loadLaporan);
 
 // ---------- Pengaturan Web ----------
 async function loadPengaturan() {

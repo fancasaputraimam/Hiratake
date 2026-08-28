@@ -702,6 +702,101 @@ app.get('/api/admin/piutang', requireAuth(), async (c) => {
   return c.json({ piutang: results })
 })
 
+// ============ FASE 2: KEUANGAN (owner & admin) ============
+
+const KATEGORI_PENGELUARAN = ['bahan_baku', 'bibit', 'gas_sterilisasi', 'listrik_air', 'gaji', 'transport', 'kemasan', 'perawatan', 'lainnya']
+
+app.get('/api/admin/pengeluaran', requireAuth(['owner', 'admin']), async (c) => {
+  const bulan = c.req.query('bulan') // opsional YYYY-MM
+  const q = bulan
+    ? c.env.DB.prepare(`SELECT p.*, u.nama AS pencatat FROM pengeluaran p LEFT JOIN users u ON u.id=p.user_id WHERE strftime('%Y-%m',p.tanggal)=? ORDER BY p.tanggal DESC, p.id DESC`).bind(bulan)
+    : c.env.DB.prepare(`SELECT p.*, u.nama AS pencatat FROM pengeluaran p LEFT JOIN users u ON u.id=p.user_id ORDER BY p.tanggal DESC, p.id DESC LIMIT 100`)
+  const { results } = await q.all()
+  return c.json({ pengeluaran: results })
+})
+
+app.post('/api/admin/pengeluaran', requireAuth(['owner', 'admin']), async (c) => {
+  const { tanggal, kategori, jumlah, keterangan } = await c.req.json()
+  if (!tanggal || !kategori || !jumlah || jumlah <= 0) return c.json({ error: 'Tanggal, kategori, dan jumlah wajib diisi.' }, 400)
+  if (!KATEGORI_PENGELUARAN.includes(kategori)) return c.json({ error: 'Kategori tidak valid.' }, 400)
+  await c.env.DB.prepare('INSERT INTO pengeluaran (tanggal, kategori, jumlah, keterangan, user_id) VALUES (?, ?, ?, ?, ?)')
+    .bind(tanggal, kategori, jumlah, keterangan || '', c.get('user').id).run()
+  return c.json({ sukses: true })
+})
+
+app.delete('/api/admin/pengeluaran/:id', requireAuth(['owner', 'admin']), async (c) => {
+  await c.env.DB.prepare('DELETE FROM pengeluaran WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+app.get('/api/admin/pemasukan-lain', requireAuth(['owner', 'admin']), async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.*, u.nama AS pencatat FROM pemasukan_lain p LEFT JOIN users u ON u.id=p.user_id ORDER BY p.tanggal DESC, p.id DESC LIMIT 100`
+  ).all()
+  return c.json({ pemasukan: results })
+})
+
+app.post('/api/admin/pemasukan-lain', requireAuth(['owner', 'admin']), async (c) => {
+  const { tanggal, jumlah, keterangan } = await c.req.json()
+  if (!tanggal || !jumlah || jumlah <= 0) return c.json({ error: 'Tanggal dan jumlah wajib diisi.' }, 400)
+  await c.env.DB.prepare('INSERT INTO pemasukan_lain (tanggal, jumlah, keterangan, user_id) VALUES (?, ?, ?, ?)')
+    .bind(tanggal, jumlah, keterangan || '', c.get('user').id).run()
+  return c.json({ sukses: true })
+})
+
+app.delete('/api/admin/pemasukan-lain/:id', requireAuth(['owner', 'admin']), async (c) => {
+  await c.env.DB.prepare('DELETE FROM pemasukan_lain WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// Laporan laba/rugi + HPP per bulan (?bulan=YYYY-MM, default bulan berjalan)
+app.get('/api/admin/laporan', requireAuth(['owner', 'admin']), async (c) => {
+  const db = c.env.DB
+  const bulan = c.req.query('bulan') || new Date().toISOString().slice(0, 7)
+  if (!/^\d{4}-\d{2}$/.test(bulan)) return c.json({ error: 'Format bulan harus YYYY-MM.' }, 400)
+
+  const [omzet, omzetLunas, pemasukanLain, pengeluaranPerKategori, panenKg, susutKg, baglogBaru, kontaminasi] = await Promise.all([
+    // Omzet akrual: semua penjualan tercatat bulan itu
+    db.prepare(`SELECT COALESCE(SUM(total),0) v, COUNT(*) n FROM penjualan WHERE strftime('%Y-%m',tanggal)=?`).bind(bulan).first<any>(),
+    // Kas masuk dari penjualan: yang lunas (tanggal_lunas di bulan itu)
+    db.prepare(`SELECT COALESCE(SUM(total),0) v FROM penjualan WHERE status_bayar='lunas' AND strftime('%Y-%m',tanggal_lunas)=?`).bind(bulan).first<any>(),
+    db.prepare(`SELECT COALESCE(SUM(jumlah),0) v FROM pemasukan_lain WHERE strftime('%Y-%m',tanggal)=?`).bind(bulan).first<any>(),
+    db.prepare(`SELECT kategori, SUM(jumlah) v FROM pengeluaran WHERE strftime('%Y-%m',tanggal)=? GROUP BY kategori ORDER BY v DESC`).bind(bulan).all(),
+    db.prepare(`SELECT COALESCE(SUM(jumlah_kg),0) v FROM panen WHERE strftime('%Y-%m',tanggal)=?`).bind(bulan).first<any>(),
+    db.prepare(`SELECT COALESCE(SUM(susut_kg),0) v FROM panen WHERE strftime('%Y-%m',tanggal)=?`).bind(bulan).first<any>(),
+    // Investasi baglog bulan itu (jumlah x biaya per baglog)
+    db.prepare(`SELECT COALESCE(SUM(jumlah * biaya_per_baglog),0) v, COALESCE(SUM(jumlah),0) n FROM baglog_batch WHERE strftime('%Y-%m',tanggal)=?`).bind(bulan).first<any>(),
+    db.prepare(`SELECT COALESCE(SUM(k.jumlah),0) v FROM baglog_kejadian k WHERE k.jenis='kontaminasi' AND strftime('%Y-%m',k.tanggal)=?`).bind(bulan).first<any>()
+  ])
+
+  const totalPengeluaran = (pengeluaranPerKategori.results as any[]).reduce((s, r) => s + r.v, 0)
+  const totalPemasukan = (omzet?.v ?? 0) + (pemasukanLain?.v ?? 0)
+  const labaRugi = totalPemasukan - totalPengeluaran
+  const kg = panenKg?.v ?? 0
+  // HPP per kg = (pengeluaran operasional + investasi baglog bulan itu) / kg panen
+  const totalBiaya = totalPengeluaran + (baglogBaru?.v ?? 0)
+  const hppPerKg = kg > 0 ? Math.round(totalBiaya / kg) : 0
+  const kasMasuk = (omzetLunas?.v ?? 0) + (pemasukanLain?.v ?? 0)
+
+  return c.json({
+    bulan,
+    omzet: omzet?.v ?? 0, jumlahNota: omzet?.n ?? 0,
+    pemasukanLain: pemasukanLain?.v ?? 0,
+    totalPemasukan,
+    pengeluaranPerKategori: pengeluaranPerKategori.results,
+    totalPengeluaran,
+    labaRugi,
+    kasMasuk,                                  // basis kas (yang benar-benar diterima)
+    piutangBulanIni: (omzet?.v ?? 0) - (omzetLunas?.v ?? 0) > 0 ? (omzet?.v ?? 0) - (omzetLunas?.v ?? 0) : 0,
+    panenKg: kg, susutKg: susutKg?.v ?? 0,
+    susutPersen: kg + (susutKg?.v ?? 0) > 0 ? Math.round(((susutKg?.v ?? 0) / (kg + (susutKg?.v ?? 0))) * 1000) / 10 : 0,
+    investasiBaglog: baglogBaru?.v ?? 0, baglogBaruJumlah: baglogBaru?.n ?? 0,
+    kontaminasiBulanIni: kontaminasi?.v ?? 0,
+    hppPerKg,
+    rataHargaJualPerKg: kg > 0 && (omzet?.v ?? 0) > 0 ? Math.round((omzet.v) / kg) : 0
+  })
+})
+
 // ============ FASE 1: PENGATURAN WEBSITE ============
 
 app.get('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {

@@ -121,6 +121,8 @@ export const adminPage = () => `<!DOCTYPE html>
       <button data-tab="penjualan" class="tab-btn"><i class="fas fa-cash-register mr-1"></i>Penjualan</button>
       <button data-tab="piutang" class="tab-btn"><i class="fas fa-file-invoice-dollar mr-1"></i>Piutang</button>
       <button data-tab="pelanggan" class="tab-btn"><i class="fas fa-address-book mr-1"></i>Pelanggan</button>
+      <button data-tab="keuangan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-wallet mr-1"></i>Keuangan</button>
+      <button data-tab="laporan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-file-lines mr-1"></i>Laporan</button>
       <button data-tab="produk" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-box mr-1"></i>Produk</button>
       <button data-tab="pengguna" class="tab-btn hidden" data-roles="owner"><i class="fas fa-users mr-1"></i>Pengguna</button>
       <button data-tab="pengaturan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-gear mr-1"></i>Web</button>
@@ -307,6 +309,80 @@ export const adminPage = () => `<!DOCTYPE html>
           <h2 class="font-serifjp font-semibold mb-3">Daftar Pelanggan</h2>
           <table class="w-full text-sm data-table" id="table-pelanggan"></table>
         </div>
+      </div>
+    </section>
+
+    <!-- Tab: Keuangan (owner & admin) -->
+    <section id="tab-keuangan" class="tab-panel hidden">
+      <div class="grid lg:grid-cols-3 gap-6">
+        <div class="space-y-6">
+          <form id="form-pengeluaran" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+            <h2 class="font-serifjp font-semibold"><i class="fas fa-arrow-trend-down text-vermillion mr-2"></i>Catat Pengeluaran</h2>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="block text-sm mb-1" for="kl-tanggal">Tanggal</label><input id="kl-tanggal" type="date" required class="form-input"></div>
+              <div><label class="block text-sm mb-1" for="kl-jumlah">Jumlah (Rp)</label><input id="kl-jumlah" type="number" min="1" required class="form-input"></div>
+            </div>
+            <div><label class="block text-sm mb-1" for="kl-kategori">Kategori</label>
+              <select id="kl-kategori" class="form-input">
+                <option value="bahan_baku">Bahan Baku (serbuk, dedak, kapur)</option>
+                <option value="bibit">Bibit</option>
+                <option value="gas_sterilisasi">Gas / Sterilisasi</option>
+                <option value="listrik_air">Listrik & Air</option>
+                <option value="gaji">Gaji Karyawan</option>
+                <option value="transport">Transport / BBM</option>
+                <option value="kemasan">Kemasan (plastik, stiker)</option>
+                <option value="perawatan">Perawatan Alat/Kumbung</option>
+                <option value="lainnya">Lainnya</option>
+              </select>
+            </div>
+            <div><label class="block text-sm mb-1" for="kl-ket">Keterangan</label><input id="kl-ket" type="text" placeholder="cth: 2 tabung gas" class="form-input"></div>
+            <button class="w-full bg-vermillion hover:bg-red-700 text-white py-2.5 rounded-full font-medium transition">Simpan Pengeluaran</button>
+          </form>
+          <form id="form-pemasukan" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+            <h2 class="font-serifjp font-semibold"><i class="fas fa-arrow-trend-up text-matcha mr-2"></i>Pemasukan Lain</h2>
+            <p class="text-xs text-sumi/50">Di luar penjualan produk — cth: jual baglog afkir untuk pupuk</p>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="block text-sm mb-1" for="pm-tanggal">Tanggal</label><input id="pm-tanggal" type="date" required class="form-input"></div>
+              <div><label class="block text-sm mb-1" for="pm-jumlah">Jumlah (Rp)</label><input id="pm-jumlah" type="number" min="1" required class="form-input"></div>
+            </div>
+            <div><label class="block text-sm mb-1" for="pm-ket">Keterangan</label><input id="pm-ket" type="text" placeholder="cth: jual 100 baglog afkir" class="form-input"></div>
+            <button class="w-full bg-matcha hover:bg-green-800 text-white py-2.5 rounded-full font-medium transition">Simpan Pemasukan</button>
+          </form>
+        </div>
+        <div class="lg:col-span-2 space-y-6">
+          <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+            <h2 class="font-serifjp font-semibold mb-3">Pengeluaran Terbaru</h2>
+            <table class="w-full text-sm data-table" id="table-pengeluaran"></table>
+          </div>
+          <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+            <h2 class="font-serifjp font-semibold mb-3">Pemasukan Lain Terbaru</h2>
+            <table class="w-full text-sm data-table" id="table-pemasukan"></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: Laporan (owner & admin) -->
+    <section id="tab-laporan" class="tab-panel hidden">
+      <div class="flex items-center gap-3 mb-5">
+        <label for="laporan-bulan" class="text-sm font-medium">Bulan:</label>
+        <input id="laporan-bulan" type="month" class="form-input" style="max-width:200px">
+        <button id="laporan-muat" class="bg-sumi text-washi px-5 py-2 rounded-full text-sm hover:bg-black transition"><i class="fas fa-rotate mr-1"></i>Muat</button>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="laporan-cards"></div>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <section class="bg-white rounded-2xl shadow p-5">
+          <h2 class="font-serifjp font-semibold mb-3"><i class="fas fa-chart-pie text-vermillion mr-2"></i>Pengeluaran per Kategori</h2>
+          <canvas id="chart-kategori" height="220"></canvas>
+        </section>
+        <section class="bg-white rounded-2xl shadow p-5">
+          <h2 class="font-serifjp font-semibold mb-3"><i class="fas fa-scale-balanced text-kin mr-2"></i>Ringkasan Laba/Rugi</h2>
+          <table class="w-full text-sm" id="laporan-rinci"></table>
+        </section>
+      </div>
+      <div class="mt-6 bg-white rounded-2xl shadow p-5">
+        <h2 class="font-serifjp font-semibold mb-3"><i class="fas fa-lightbulb text-kin mr-2"></i>Analisis Otomatis</h2>
+        <ul id="laporan-insight" class="space-y-2 text-sm"></ul>
       </div>
     </section>
 
