@@ -33,7 +33,7 @@ async function api(url, opts = {}) {
       if (btn.dataset.roles.split(',').includes(user.role)) btn.classList.remove('hidden');
     });
 
-    ['panen-tanggal', 'jual-tanggal', 'bg-tanggal', 'kj-tanggal', 'kl-tanggal', 'pm-tanggal'].forEach((id) => {
+    ['panen-tanggal', 'jual-tanggal', 'bg-tanggal', 'kj-tanggal', 'kl-tanggal', 'pm-tanggal', 'po-tgl-pesan', 'po-tgl-kirim', 'st-tanggal'].forEach((id) => {
       const el = document.getElementById(id); if (el) el.value = hariIni();
     });
 
@@ -52,7 +52,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.classList.add('active');
     document.querySelectorAll('.tab-panel').forEach((p) => p.classList.add('hidden'));
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
-    const loaders = { dashboard: loadRingkasan, baglog: loadBaglog, panen: loadPanen, penjualan: loadPenjualan, piutang: loadPiutang, pelanggan: loadPelanggan, keuangan: loadKeuangan, laporan: loadLaporan, produk: loadProduk, pengguna: loadUsers, pengaturan: loadPengaturan };
+    const loaders = { dashboard: loadRingkasan, baglog: loadBaglog, panen: loadPanen, penjualan: loadPenjualan, pesanan: loadPesanan, stok: loadStok, piutang: loadPiutang, pelanggan: loadPelanggan, keuangan: loadKeuangan, laporan: loadLaporan, produk: loadProduk, pengguna: loadUsers, pengaturan: loadPengaturan };
     loaders[btn.dataset.tab]?.();
   });
 });
@@ -263,9 +263,13 @@ document.getElementById('jual-jumlah').addEventListener('input', updateTotalJual
 
 async function loadPelangganDropdown() {
   const { pelanggan } = await api('/api/admin/pelanggan');
+  const aktif = pelanggan.filter((p) => p.aktif);
   const sel = document.getElementById('jual-pelanggan');
   if (sel) sel.innerHTML = '<option value="">— umum / tanpa nama —</option>' +
-    pelanggan.filter((p) => p.aktif).map((p) => `<option value="${p.id}">${p.nama} (${p.tipe})</option>`).join('');
+    aktif.map((p) => `<option value="${p.id}">${p.nama} (${p.tipe})</option>`).join('');
+  const poSel = document.getElementById('po-pelanggan');
+  if (poSel) poSel.innerHTML = '<option value="">— pilih pelanggan —</option>' +
+    aktif.map((p) => `<option value="${p.id}">${p.nama} (${p.tipe})</option>`).join('');
 }
 
 document.getElementById('jual-bayar')?.addEventListener('change', (e) => {
@@ -315,6 +319,206 @@ document.getElementById('form-penjualan').addEventListener('submit', async (e) =
 window.tandaiLunas = async (id) => {
   if (!confirm('Tandai piutang ini sudah dibayar lunas?')) return;
   try { await api(`/api/admin/penjualan/${id}/lunas`, { method: 'PUT' }); toast('Piutang lunas ✅'); loadPenjualan(); }
+  catch (ex) { toast(ex.message, false); }
+};
+
+// ---------- Pesanan / PO ----------
+function opsiProdukPO() {
+  return PRODUK_CACHE.filter((p) => p.aktif !== 0).map((p) => `<option value="${p.id}" data-harga="${p.harga}">${p.nama} — ${rupiah(p.harga)}</option>`).join('');
+}
+
+function tambahBarisItemPO() {
+  const wrap = document.getElementById('po-items');
+  const div = document.createElement('div');
+  div.className = 'flex gap-2 items-center po-item-row';
+  div.innerHTML = `
+    <select class="form-input po-item-produk flex-1">${opsiProdukPO()}</select>
+    <input type="number" min="1" value="1" class="form-input po-item-jumlah" style="max-width:80px">
+    <button type="button" class="text-red-400 hover:text-red-600 po-item-hapus px-1" title="Hapus item"><i class="fas fa-times"></i></button>`;
+  div.querySelector('.po-item-hapus').addEventListener('click', () => { div.remove(); hitungTotalPO(); });
+  div.querySelector('.po-item-produk').addEventListener('change', hitungTotalPO);
+  div.querySelector('.po-item-jumlah').addEventListener('input', hitungTotalPO);
+  wrap.appendChild(div);
+  hitungTotalPO();
+}
+
+function hitungTotalPO() {
+  let total = 0;
+  document.querySelectorAll('.po-item-row').forEach((row) => {
+    const harga = parseInt(row.querySelector('.po-item-produk').selectedOptions[0]?.dataset.harga || 0);
+    const qty = parseInt(row.querySelector('.po-item-jumlah').value || 0);
+    total += harga * qty;
+  });
+  const el = document.getElementById('po-total');
+  if (el) el.textContent = rupiah(total);
+}
+
+document.getElementById('po-tambah-item')?.addEventListener('click', tambahBarisItemPO);
+
+const PO_STATUS_BADGE = {
+  baru: 'bg-blue-100 text-blue-700', diproses: 'bg-yellow-100 text-yellow-700',
+  siap: 'bg-purple-100 text-purple-700', selesai: 'bg-green-100 text-green-700', batal: 'bg-gray-200 text-gray-500'
+};
+
+async function loadPesanan() {
+  if (!document.querySelector('.po-item-row')) tambahBarisItemPO();
+  const filter = document.getElementById('po-filter')?.value || '';
+  const { pesanan } = await api('/api/admin/pesanan' + (filter ? '?status=' + filter : ''));
+  document.getElementById('table-pesanan').innerHTML = `
+    <thead><tr><th>Kode</th><th>Pelanggan</th><th>Kirim</th><th>Total</th><th>Status</th><th></th></tr></thead>
+    <tbody>${pesanan.map((ps) => {
+      const telat = ps.status !== 'selesai' && ps.status !== 'batal' && ps.tanggal_kirim < hariIni();
+      return `
+      <tr class="cursor-pointer ${ps.status === 'batal' ? 'opacity-50' : ''} ${telat ? 'bg-red-50' : ''}" onclick="lihatItemPO(${ps.id}, '${ps.kode}')">
+        <td class="font-mono text-xs font-semibold">${ps.kode}${ps.catatan ? `<br><span class="text-gray-400 font-sans">${ps.catatan}</span>` : ''}</td>
+        <td>${ps.pelanggan_nama || '-'}</td>
+        <td class="${telat ? 'text-red-600 font-semibold' : ''}">${ps.tanggal_kirim}${telat ? ' ⚠️' : ''}<br><span class="text-xs text-gray-400">pesan ${ps.tanggal_pesan}</span></td>
+        <td class="font-semibold" style="color:#C73E3A">${rupiah(ps.total)}<br><span class="text-xs text-gray-400 font-normal">${ps.jumlah_item} item</span></td>
+        <td><span class="text-xs px-2 py-0.5 rounded-full ${PO_STATUS_BADGE[ps.status]}">${ps.status}</span></td>
+        <td class="whitespace-nowrap" onclick="event.stopPropagation()">
+          ${ps.status === 'baru' ? `<button onclick="ubahStatusPO(${ps.id},'diproses')" class="text-yellow-600 mr-1" title="Mulai proses"><i class="fas fa-play"></i></button>` : ''}
+          ${ps.status === 'diproses' ? `<button onclick="ubahStatusPO(${ps.id},'siap')" class="text-purple-600 mr-1" title="Tandai siap kirim"><i class="fas fa-box-open"></i></button>` : ''}
+          ${['baru','diproses','siap'].includes(ps.status) ? `
+            <button onclick="selesaikanPO(${ps.id}, '${ps.kode}')" class="text-green-600 mr-1" title="Selesai + catat penjualan otomatis"><i class="fas fa-circle-check"></i></button>
+            <button onclick="ubahStatusPO(${ps.id},'batal')" class="text-gray-400 hover:text-red-500" title="Batalkan"><i class="fas fa-ban"></i></button>` : ''}
+          ${ps.pelanggan_wa ? `<a href="https://wa.me/${ps.pelanggan_wa}?text=${encodeURIComponent('Halo, pesanan ' + ps.kode + ' (' + rupiah(ps.total) + ') status: ' + ps.status + '. — Hiratake')}" target="_blank" class="text-green-600 ml-1" title="Kabari via WA"><i class="fab fa-whatsapp"></i></a>` : ''}
+        </td>
+      </tr>`; }).join('') || '<tr><td colspan="6" class="text-center text-gray-400 py-4">Belum ada pesanan</td></tr>'}</tbody>`;
+}
+
+document.getElementById('po-filter')?.addEventListener('change', loadPesanan);
+
+window.lihatItemPO = async (id, kode) => {
+  const { item } = await api(`/api/admin/pesanan/${id}/item`);
+  document.getElementById('po-detail').classList.remove('hidden');
+  document.getElementById('po-detail-judul').textContent = 'Item Pesanan — ' + kode;
+  const total = item.reduce((s, it) => s + it.subtotal, 0);
+  document.getElementById('table-pesanan-item').innerHTML = `
+    <thead><tr><th>Produk</th><th>Jumlah</th><th>Harga</th><th>Subtotal</th></tr></thead>
+    <tbody>${item.map((it) => `
+      <tr><td>${it.nama_produk}</td><td>${it.jumlah}</td><td>${rupiah(it.harga)}</td><td class="font-semibold">${rupiah(it.subtotal)}</td></tr>`).join('')}
+      <tr class="font-bold"><td colspan="3">TOTAL</td><td style="color:#C73E3A">${rupiah(total)}</td></tr></tbody>`;
+};
+
+window.ubahStatusPO = async (id, status) => {
+  if (status === 'batal' && !confirm('Batalkan pesanan ini?')) return;
+  try { await api(`/api/admin/pesanan/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }); toast('Status pesanan: ' + status); loadPesanan(); }
+  catch (ex) { toast(ex.message, false); }
+};
+
+window.selesaikanPO = async (id, kode) => {
+  const tempo = confirm(`Selesaikan ${kode} dan catat sebagai penjualan?\n\nOK = LUNAS (dibayar cash)\nCancel = pilih TEMPO (piutang)`);
+  let body = { status_bayar: 'lunas' };
+  if (!tempo) {
+    const jt = prompt('Pembayaran TEMPO — masukkan tanggal jatuh tempo (YYYY-MM-DD):');
+    if (!jt) return;
+    body = { status_bayar: 'tempo', jatuh_tempo: jt };
+  }
+  try {
+    const r = await api(`/api/admin/pesanan/${id}/selesai`, { method: 'POST', body: JSON.stringify(body) });
+    toast(`Pesanan selesai — ${r.jumlahPenjualan} penjualan otomatis tercatat ✅`);
+    loadPesanan();
+  } catch (ex) { toast(ex.message, false); }
+};
+
+document.getElementById('form-pesanan')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const item = [...document.querySelectorAll('.po-item-row')].map((row) => ({
+    produk_id: parseInt(row.querySelector('.po-item-produk').value),
+    jumlah: parseInt(row.querySelector('.po-item-jumlah').value)
+  })).filter((it) => it.produk_id && it.jumlah > 0);
+  try {
+    const r = await api('/api/admin/pesanan', { method: 'POST', body: JSON.stringify({
+      pelanggan_id: parseInt(document.getElementById('po-pelanggan').value) || null,
+      tanggal_pesan: document.getElementById('po-tgl-pesan').value,
+      tanggal_kirim: document.getElementById('po-tgl-kirim').value,
+      catatan: document.getElementById('po-catatan').value.trim(),
+      item
+    })});
+    toast(`Pesanan ${r.kode} dibuat 📋`);
+    document.getElementById('po-catatan').value = '';
+    document.getElementById('po-items').innerHTML = '';
+    tambahBarisItemPO();
+    loadPesanan();
+  } catch (ex) { toast(ex.message, false); }
+});
+
+// ---------- Stok & Rekonsiliasi ----------
+const LABEL_PENYESUAIAN = { rusak: 'Rusak/busuk', bonus: 'Bonus', sampel: 'Sampel', konsumsi: 'Konsumsi', koreksi: 'Koreksi', lainnya: 'Lainnya' };
+
+async function loadStok() {
+  const inputBulan = document.getElementById('stok-bulan');
+  if (!inputBulan.value) inputBulan.value = hariIni().slice(0, 7);
+  const [d, { penyesuaian }] = await Promise.all([
+    api('/api/admin/stok?bulan=' + inputBulan.value),
+    api('/api/admin/stok/penyesuaian')
+  ]);
+
+  const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString('id-ID');
+  document.getElementById('stok-cards').innerHTML = `
+    <div class="stat-card"><i class="fas fa-wheat-awn text-matcha"></i><p class="stat-val">${fmt(d.totalPanenKg)} kg</p><p class="stat-label">Panen Bulan Ini</p></div>
+    <div class="stat-card"><i class="fas fa-cash-register text-kin"></i><p class="stat-val">${fmt(d.totalTerjualKg)} kg</p><p class="stat-label">Terjual (kg segar)</p></div>
+    <div class="stat-card"><i class="fas fa-sliders" style="color:#C9A227"></i><p class="stat-val">${fmt(d.totalPenyesuaianKeluar)} kg</p><p class="stat-label">Penyesuaian Keluar</p></div>
+    <div class="stat-card ${d.saldoAkhirBulan < 0 ? 'bg-red-50' : ''}"><i class="fas fa-boxes-stacked ${d.saldoAkhirBulan < 0 ? 'text-red-500' : 'text-matcha'}"></i><p class="stat-val ${d.saldoAkhirBulan < 0 ? 'text-red-600' : ''}">${fmt(d.saldoAkhirBulan)} kg</p><p class="stat-label">Saldo Stok Akhir</p></div>`;
+
+  const peringatan = document.getElementById('stok-peringatan');
+  if (d.adaMinus) {
+    peringatan.classList.remove('hidden');
+    peringatan.innerHTML = '<i class="fas fa-triangle-exclamation mr-2"></i><strong>Ada hari dengan saldo minus!</strong> Terjual/keluar lebih banyak dari yang dipanen → kemungkinan ada panen yang lupa dicatat, atau berat produk belum diisi. Cek baris merah di bawah.';
+  } else {
+    peringatan.classList.add('hidden');
+  }
+
+  document.getElementById('table-stok').innerHTML = `
+    <thead><tr><th>Tanggal</th><th>Panen</th><th>Terjual</th><th>Peny. Keluar</th><th>Peny. Masuk</th><th>Netto</th><th>Saldo</th></tr></thead>
+    <tbody>
+      <tr class="text-gray-500"><td colspan="6">Saldo awal bulan</td><td class="font-semibold ${d.saldoAwalBulan < 0 ? 'text-red-600' : ''}">${fmt(d.saldoAwalBulan)} kg</td></tr>
+      ${d.hari.map((h) => `
+      <tr class="${h.minus ? 'bg-red-50' : ''}">
+        <td>${h.tanggal}</td>
+        <td class="text-matcha" style="color:#7A8450">${h.panenKg ? '+' + fmt(h.panenKg) : '-'}</td>
+        <td>${h.terjualKg ? '−' + fmt(h.terjualKg) : '-'}</td>
+        <td class="${h.penyesuaianKeluar ? 'text-orange-600' : ''}">${h.penyesuaianKeluar ? '−' + fmt(h.penyesuaianKeluar) : '-'}</td>
+        <td>${h.penyesuaianMasuk ? '+' + fmt(h.penyesuaianMasuk) : '-'}</td>
+        <td class="font-semibold ${h.netto < 0 ? 'text-red-600' : ''}">${h.netto > 0 ? '+' : ''}${fmt(h.netto)}</td>
+        <td class="font-bold ${h.saldoAkhir < 0 ? 'text-red-600' : ''}">${fmt(h.saldoAkhir)} kg${h.minus ? ' ⚠️' : ''}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="text-center text-gray-400 py-4">Belum ada pergerakan stok bulan ini</td></tr>'}
+    </tbody>`;
+
+  const boleh = ['owner', 'admin'].includes(ME.role);
+  document.getElementById('table-penyesuaian').innerHTML = `
+    <thead><tr><th>Tanggal</th><th>Jenis</th><th>Kg</th><th>Ket.</th>${boleh ? '<th></th>' : ''}</tr></thead>
+    <tbody>${penyesuaian.map((s) => `
+      <tr>
+        <td>${s.tanggal}</td>
+        <td><span class="text-xs px-2 py-0.5 rounded-full ${s.arah === 'keluar' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}">${LABEL_PENYESUAIAN[s.jenis]} ${s.arah === 'keluar' ? '↓' : '↑'}</span></td>
+        <td class="font-semibold">${s.jumlah_kg}</td>
+        <td>${s.keterangan || '-'}<br><span class="text-xs text-gray-400">${s.pencatat || ''}</span></td>
+        ${boleh ? `<td><button onclick="hapusPenyesuaian(${s.id})" class="text-red-400 hover:text-red-600" title="Hapus"><i class="fas fa-trash"></i></button></td>` : ''}
+      </tr>`).join('') || '<tr><td colspan="5" class="text-center text-gray-400 py-4">Belum ada penyesuaian</td></tr>'}</tbody>`;
+}
+
+document.getElementById('stok-muat')?.addEventListener('click', loadStok);
+
+document.getElementById('form-penyesuaian')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/admin/stok/penyesuaian', { method: 'POST', body: JSON.stringify({
+      tanggal: document.getElementById('st-tanggal').value,
+      jenis: document.getElementById('st-jenis').value,
+      arah: document.getElementById('st-arah').value,
+      jumlah_kg: parseFloat(document.getElementById('st-jumlah').value),
+      keterangan: document.getElementById('st-ket').value.trim()
+    })});
+    toast('Penyesuaian stok dicatat ✅');
+    document.getElementById('st-jumlah').value = ''; document.getElementById('st-ket').value = '';
+    loadStok();
+  } catch (ex) { toast(ex.message, false); }
+});
+
+window.hapusPenyesuaian = async (id) => {
+  if (!confirm('Hapus penyesuaian stok ini?')) return;
+  try { await api('/api/admin/stok/penyesuaian/' + id, { method: 'DELETE' }); toast('Dihapus'); loadStok(); }
   catch (ex) { toast(ex.message, false); }
 };
 
@@ -563,11 +767,12 @@ window.hapusJual = async (id) => {
 async function loadProduk() {
   const { produk } = await api('/api/admin/produk');
   document.getElementById('table-produk').innerHTML = `
-    <thead><tr><th>Nama</th><th>Harga</th><th>Satuan</th><th>Badge</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Nama</th><th>Harga</th><th>Satuan</th><th>Berat/Unit</th><th>Badge</th><th>Status</th><th></th></tr></thead>
     <tbody>${produk.map((p) => `
       <tr class="${p.aktif ? '' : 'opacity-50'}">
         <td>${p.nama}<br><span class="text-xs text-gray-400">${p.jp || ''}</span></td>
         <td class="font-semibold">${rupiah(p.harga)}</td><td>${p.satuan}</td>
+        <td>${p.berat_kg > 0 ? p.berat_kg + ' kg' : '<span class="text-gray-400 text-xs">olahan/0</span>'}</td>
         <td>${p.badge ? `<span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">${p.badge}</span>` : '-'}</td>
         <td>${p.aktif ? '<span class="text-green-600 text-xs font-semibold">Aktif</span>' : '<span class="text-gray-400 text-xs">Nonaktif</span>'}</td>
         <td class="whitespace-nowrap">
@@ -585,6 +790,7 @@ window.editProduk = (p) => {
   document.getElementById('produk-jp').value = p.jp || '';
   document.getElementById('produk-harga').value = p.harga;
   document.getElementById('produk-satuan').value = p.satuan;
+  document.getElementById('produk-berat').value = p.berat_kg || 0;
   document.getElementById('produk-deskripsi').value = p.deskripsi || '';
   document.getElementById('produk-badge').value = p.badge || '';
   document.getElementById('produk-form-title').innerHTML = '<i class="fas fa-pen text-blue-500 mr-2"></i>Ubah Produk';
@@ -608,6 +814,7 @@ document.getElementById('form-produk').addEventListener('submit', async (e) => {
     jp: document.getElementById('produk-jp').value.trim(),
     harga: parseInt(document.getElementById('produk-harga').value),
     satuan: document.getElementById('produk-satuan').value.trim(),
+    berat_kg: parseFloat(document.getElementById('produk-berat').value) || 0,
     deskripsi: document.getElementById('produk-deskripsi').value.trim(),
     badge: document.getElementById('produk-badge').value.trim() || null,
     aktif: 1

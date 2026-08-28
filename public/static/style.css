@@ -243,3 +243,44 @@
   vertical-align: top;
 }
 .data-table tbody tr:hover { background: rgba(199, 62, 58, 0.03); }
+
+/* ===== Responsive HP / Tablet ===== */
+
+/* Scroll horizontal halus untuk tabel & tab di layar sentuh */
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+#tab-nav { -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+#tab-nav::-webkit-scrollbar { height: 3px; }
+#tab-nav::-webkit-scrollbar-thumb { background: rgba(199, 62, 58, 0.5); border-radius: 3px; }
+
+@media (max-width: 640px) {
+  /* Tabel data: paksa lebar minimum agar bisa di-scroll ke samping, bukan berantakan */
+  .data-table { min-width: 560px; }
+  .data-table th { padding: 0.45rem 0.4rem; font-size: 0.68rem; }
+  .data-table td { padding: 0.5rem 0.4rem; font-size: 0.8rem; }
+
+  /* Tab navigasi lebih rapat namun tetap mudah disentuh */
+  .tab-btn { padding: 0.6rem 0.75rem; font-size: 0.78rem; }
+
+  /* Kartu statistik lebih ringkas */
+  .stat-card { padding: 0.85rem; border-radius: 0.85rem; }
+  .stat-card i { font-size: 1.15rem; margin-bottom: 0.35rem; }
+  .stat-card .stat-val { font-size: 1.02rem; }
+  .stat-card .stat-label { font-size: 0.68rem; }
+
+  /* Cegah zoom otomatis iOS saat fokus input (font < 16px memicu zoom) */
+  .form-input { font-size: 16px; padding: 0.65rem 0.9rem; }
+
+  /* Kartu-kartu landing lebih ramping */
+  .feature-card, .process-step { padding: 1.25rem; }
+  .product-card { padding: 1.35rem; }
+  .gallery-img { height: 9.5rem; }
+  .contact-card { padding: 1rem 1.1rem; }
+
+  /* Toast tidak mepet layar */
+  #toast { width: calc(100% - 2rem); max-width: 24rem; text-align: center; }
+}
+
+/* Tombol aksi di tabel: area sentuh lebih besar di perangkat sentuh */
+@media (pointer: coarse) {
+  .data-table button, .data-table a { padding: 0.3rem; display: inline-block; }
+}

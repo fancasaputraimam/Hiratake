@@ -797,6 +797,180 @@ app.get('/api/admin/laporan', requireAuth(['owner', 'admin']), async (c) => {
   })
 })
 
+// ============ FASE 3: STOK HARIAN + REKONSILIASI ============
+
+const JENIS_PENYESUAIAN = ['rusak', 'bonus', 'sampel', 'konsumsi', 'koreksi', 'lainnya']
+
+// Rekonsiliasi stok per hari dalam 1 bulan: panen vs terjual (kg) vs penyesuaian
+app.get('/api/admin/stok', requireAuth(), async (c) => {
+  const db = c.env.DB
+  const bulan = c.req.query('bulan') || new Date().toISOString().slice(0, 7)
+  if (!/^\d{4}-\d{2}$/.test(bulan)) return c.json({ error: 'Format bulan harus YYYY-MM.' }, 400)
+
+  const [panen, jual, sesuai, saldoAwal] = await Promise.all([
+    db.prepare(`SELECT tanggal, SUM(jumlah_kg) v FROM panen WHERE strftime('%Y-%m',tanggal)=? GROUP BY tanggal`).bind(bulan).all(),
+    db.prepare(`SELECT tanggal, SUM(berat_kg) v FROM penjualan WHERE strftime('%Y-%m',tanggal)=? GROUP BY tanggal`).bind(bulan).all(),
+    db.prepare(`SELECT tanggal,
+        SUM(CASE WHEN arah='masuk' THEN jumlah_kg ELSE 0 END) masuk,
+        SUM(CASE WHEN arah='keluar' THEN jumlah_kg ELSE 0 END) keluar
+      FROM stok_penyesuaian WHERE strftime('%Y-%m',tanggal)=? GROUP BY tanggal`).bind(bulan).all(),
+    // Saldo stok sebelum bulan ini (akumulasi semua riwayat)
+    db.prepare(`SELECT
+        (SELECT COALESCE(SUM(jumlah_kg),0) FROM panen WHERE strftime('%Y-%m',tanggal)<?)
+      - (SELECT COALESCE(SUM(berat_kg),0) FROM penjualan WHERE strftime('%Y-%m',tanggal)<?)
+      + (SELECT COALESCE(SUM(CASE WHEN arah='masuk' THEN jumlah_kg ELSE -jumlah_kg END),0) FROM stok_penyesuaian WHERE strftime('%Y-%m',tanggal)<?)
+      AS v`).bind(bulan, bulan, bulan).first<any>()
+  ])
+
+  const peta = new Map<string, any>()
+  const ambil = (t: string) => {
+    if (!peta.has(t)) peta.set(t, { tanggal: t, panenKg: 0, terjualKg: 0, penyesuaianMasuk: 0, penyesuaianKeluar: 0 })
+    return peta.get(t)
+  }
+  for (const r of panen.results as any[]) ambil(r.tanggal).panenKg = r.v
+  for (const r of jual.results as any[]) ambil(r.tanggal).terjualKg = r.v
+  for (const r of sesuai.results as any[]) { const x = ambil(r.tanggal); x.penyesuaianMasuk = r.masuk; x.penyesuaianKeluar = r.keluar }
+
+  const hari = [...peta.values()].sort((a, b) => a.tanggal < b.tanggal ? -1 : 1)
+  let saldo = Math.round((saldoAwal?.v ?? 0) * 100) / 100
+  const saldoAwalBulan = saldo
+  for (const h of hari) {
+    h.netto = Math.round((h.panenKg - h.terjualKg + h.penyesuaianMasuk - h.penyesuaianKeluar) * 100) / 100
+    saldo = Math.round((saldo + h.netto) * 100) / 100
+    h.saldoAkhir = saldo
+    h.minus = saldo < 0 ? 1 : 0 // jamur "hilang": terjual lebih banyak dari yang pernah dipanen
+  }
+  return c.json({
+    bulan, saldoAwalBulan, saldoAkhirBulan: saldo, hari,
+    totalPanenKg: hari.reduce((s, h) => s + h.panenKg, 0),
+    totalTerjualKg: hari.reduce((s, h) => s + h.terjualKg, 0),
+    totalPenyesuaianKeluar: hari.reduce((s, h) => s + h.penyesuaianKeluar, 0),
+    adaMinus: hari.some(h => h.minus) ? 1 : 0
+  })
+})
+
+app.get('/api/admin/stok/penyesuaian', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT s.*, u.nama AS pencatat FROM stok_penyesuaian s LEFT JOIN users u ON u.id=s.user_id ORDER BY s.tanggal DESC, s.id DESC LIMIT 100`
+  ).all()
+  return c.json({ penyesuaian: results })
+})
+
+app.post('/api/admin/stok/penyesuaian', requireAuth(), async (c) => {
+  const { tanggal, jenis, arah, jumlah_kg, keterangan } = await c.req.json()
+  if (!tanggal || !jenis || !arah || !jumlah_kg || jumlah_kg <= 0) return c.json({ error: 'Tanggal, jenis, arah, dan jumlah kg wajib diisi.' }, 400)
+  if (!JENIS_PENYESUAIAN.includes(jenis)) return c.json({ error: 'Jenis penyesuaian tidak valid.' }, 400)
+  if (!['keluar', 'masuk'].includes(arah)) return c.json({ error: 'Arah harus keluar/masuk.' }, 400)
+  await c.env.DB.prepare('INSERT INTO stok_penyesuaian (tanggal, jenis, arah, jumlah_kg, keterangan, user_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(tanggal, jenis, arah, jumlah_kg, keterangan || '', c.get('user').id).run()
+  return c.json({ sukses: true })
+})
+
+app.delete('/api/admin/stok/penyesuaian/:id', requireAuth(['owner', 'admin']), async (c) => {
+  await c.env.DB.prepare('DELETE FROM stok_penyesuaian WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// ============ FASE 3: PESANAN / PO PELANGGAN ============
+
+app.get('/api/admin/pesanan', requireAuth(), async (c) => {
+  const status = c.req.query('status') // opsional filter
+  const base = `
+    SELECT ps.*, pl.nama AS pelanggan_nama, pl.wa AS pelanggan_wa, u.nama AS pencatat,
+      (SELECT COALESCE(SUM(subtotal),0) FROM pesanan_item WHERE pesanan_id = ps.id) AS total,
+      (SELECT COUNT(*) FROM pesanan_item WHERE pesanan_id = ps.id) AS jumlah_item
+    FROM pesanan ps
+    LEFT JOIN pelanggan pl ON pl.id = ps.pelanggan_id
+    LEFT JOIN users u ON u.id = ps.user_id`
+  const q = status
+    ? c.env.DB.prepare(base + ` WHERE ps.status = ? ORDER BY ps.tanggal_kirim ASC, ps.id DESC LIMIT 100`).bind(status)
+    : c.env.DB.prepare(base + ` ORDER BY CASE ps.status WHEN 'baru' THEN 0 WHEN 'diproses' THEN 1 WHEN 'siap' THEN 2 WHEN 'selesai' THEN 3 ELSE 4 END, ps.tanggal_kirim ASC LIMIT 100`)
+  const { results } = await q.all()
+  return c.json({ pesanan: results })
+})
+
+app.get('/api/admin/pesanan/:id/item', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM pesanan_item WHERE pesanan_id = ? ORDER BY id').bind(c.req.param('id')).all()
+  return c.json({ item: results })
+})
+
+app.post('/api/admin/pesanan', requireAuth(), async (c) => {
+  const { pelanggan_id, tanggal_pesan, tanggal_kirim, catatan, item } = await c.req.json()
+  if (!pelanggan_id) return c.json({ error: 'Pesanan wajib pelanggan terdaftar (untuk konfirmasi & penagihan).' }, 400)
+  if (!tanggal_pesan || !tanggal_kirim) return c.json({ error: 'Tanggal pesan dan tanggal kirim wajib diisi.' }, 400)
+  if (tanggal_kirim < tanggal_pesan) return c.json({ error: 'Tanggal kirim tidak boleh sebelum tanggal pesan.' }, 400)
+  if (!Array.isArray(item) || item.length === 0) return c.json({ error: 'Pesanan minimal 1 item produk.' }, 400)
+
+  const pl = await c.env.DB.prepare('SELECT nama FROM pelanggan WHERE id = ? AND aktif = 1').bind(pelanggan_id).first<any>()
+  if (!pl) return c.json({ error: 'Pelanggan tidak ditemukan.' }, 404)
+
+  // Validasi semua produk & hitung subtotal dari harga DB (anti-miss: harga tidak bisa dikarang)
+  const barisItem: any[] = []
+  for (const it of item) {
+    if (!it.produk_id || !it.jumlah || it.jumlah <= 0) return c.json({ error: 'Setiap item wajib produk dan jumlah > 0.' }, 400)
+    const p = await c.env.DB.prepare('SELECT id, nama, harga FROM produk WHERE id = ? AND aktif = 1').bind(it.produk_id).first<any>()
+    if (!p) return c.json({ error: `Produk id ${it.produk_id} tidak ditemukan/nonaktif.` }, 404)
+    barisItem.push({ produk_id: p.id, nama_produk: p.nama, jumlah: it.jumlah, harga: p.harga, subtotal: p.harga * it.jumlah })
+  }
+
+  // Kode otomatis PO-YYYY-MM-XXX
+  const bulan = String(tanggal_pesan).slice(0, 7)
+  const n = await c.env.DB.prepare(`SELECT COUNT(*) v FROM pesanan WHERE kode LIKE ?`).bind(`PO-${bulan}-%`).first<any>()
+  const kode = `PO-${bulan}-${String((n?.v ?? 0) + 1).padStart(3, '0')}`
+
+  const res = await c.env.DB.prepare(
+    'INSERT INTO pesanan (kode, pelanggan_id, tanggal_pesan, tanggal_kirim, status, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(kode, pelanggan_id, tanggal_pesan, tanggal_kirim, 'baru', catatan || '', c.get('user').id).run()
+  const pesananId = res.meta.last_row_id
+
+  await c.env.DB.batch(barisItem.map(b =>
+    c.env.DB.prepare('INSERT INTO pesanan_item (pesanan_id, produk_id, nama_produk, jumlah, harga, subtotal) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(pesananId, b.produk_id, b.nama_produk, b.jumlah, b.harga, b.subtotal)
+  ))
+  return c.json({ sukses: true, kode })
+})
+
+app.put('/api/admin/pesanan/:id/status', requireAuth(), async (c) => {
+  const { status } = await c.req.json()
+  if (!['baru', 'diproses', 'siap', 'batal'].includes(status)) {
+    return c.json({ error: "Status hanya bisa: baru/diproses/siap/batal. Untuk 'selesai' gunakan tombol Selesai+Jual (agar penjualan otomatis tercatat, anti-miss)." }, 400)
+  }
+  const ps = await c.env.DB.prepare('SELECT status FROM pesanan WHERE id = ?').bind(c.req.param('id')).first<any>()
+  if (!ps) return c.json({ error: 'Pesanan tidak ditemukan.' }, 404)
+  if (ps.status === 'selesai') return c.json({ error: 'Pesanan sudah selesai, tidak bisa diubah.' }, 400)
+  await c.env.DB.prepare('UPDATE pesanan SET status = ? WHERE id = ?').bind(status, c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// Selesaikan pesanan → otomatis buat baris penjualan per item (anti-miss: PO selesai pasti tercatat sebagai penjualan)
+app.post('/api/admin/pesanan/:id/selesai', requireAuth(), async (c) => {
+  const { status_bayar, jatuh_tempo } = await c.req.json()
+  const bayar = status_bayar === 'tempo' ? 'tempo' : 'lunas'
+  if (bayar === 'tempo' && !jatuh_tempo) return c.json({ error: 'Pembayaran tempo wajib tanggal jatuh tempo.' }, 400)
+
+  const ps = await c.env.DB.prepare('SELECT * FROM pesanan WHERE id = ?').bind(c.req.param('id')).first<any>()
+  if (!ps) return c.json({ error: 'Pesanan tidak ditemukan.' }, 404)
+  if (ps.status === 'selesai' || ps.penjualan_dibuat) return c.json({ error: 'Pesanan sudah selesai & penjualan sudah tercatat (tidak bisa dobel).' }, 400)
+  if (ps.status === 'batal') return c.json({ error: 'Pesanan batal tidak bisa diselesaikan.' }, 400)
+
+  const pl = await c.env.DB.prepare('SELECT nama FROM pelanggan WHERE id = ?').bind(ps.pelanggan_id).first<any>()
+  const { results: items } = await c.env.DB.prepare('SELECT * FROM pesanan_item WHERE pesanan_id = ?').bind(ps.id).all()
+  if (!items.length) return c.json({ error: 'Pesanan tidak punya item.' }, 400)
+
+  const tanggal = new Date().toISOString().slice(0, 10)
+  const stmts: any[] = []
+  for (const it of items as any[]) {
+    const p = await c.env.DB.prepare('SELECT berat_kg FROM produk WHERE id = ?').bind(it.produk_id).first<any>()
+    stmts.push(c.env.DB.prepare(
+      'INSERT INTO penjualan (tanggal, produk_id, nama_produk, jumlah, total, pembeli, pelanggan_id, status_bayar, jatuh_tempo, tanggal_lunas, berat_kg, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(tanggal, it.produk_id, it.nama_produk, it.jumlah, it.subtotal, pl?.nama || '', ps.pelanggan_id, bayar,
+      bayar === 'tempo' ? jatuh_tempo : null, bayar === 'lunas' ? tanggal : null, (p?.berat_kg || 0) * it.jumlah, c.get('user').id))
+  }
+  stmts.push(c.env.DB.prepare("UPDATE pesanan SET status='selesai', penjualan_dibuat=1 WHERE id = ?").bind(ps.id))
+  await c.env.DB.batch(stmts)
+  return c.json({ sukses: true, jumlahPenjualan: items.length })
+})
+
 // ============ FASE 1: PENGATURAN WEBSITE ============
 
 app.get('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {

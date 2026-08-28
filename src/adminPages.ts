@@ -119,6 +119,8 @@ export const adminPage = () => `<!DOCTYPE html>
       <button data-tab="baglog" class="tab-btn"><i class="fas fa-cubes mr-1"></i>Baglog</button>
       <button data-tab="panen" class="tab-btn"><i class="fas fa-wheat-awn mr-1"></i>Panen</button>
       <button data-tab="penjualan" class="tab-btn"><i class="fas fa-cash-register mr-1"></i>Penjualan</button>
+      <button data-tab="pesanan" class="tab-btn"><i class="fas fa-clipboard-list mr-1"></i>Pesanan</button>
+      <button data-tab="stok" class="tab-btn"><i class="fas fa-boxes-stacked mr-1"></i>Stok</button>
       <button data-tab="piutang" class="tab-btn"><i class="fas fa-file-invoice-dollar mr-1"></i>Piutang</button>
       <button data-tab="pelanggan" class="tab-btn"><i class="fas fa-address-book mr-1"></i>Pelanggan</button>
       <button data-tab="keuangan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-wallet mr-1"></i>Keuangan</button>
@@ -245,6 +247,102 @@ export const adminPage = () => `<!DOCTYPE html>
       </div>
     </section>
 
+    <!-- Tab: Pesanan / PO -->
+    <section id="tab-pesanan" class="tab-panel hidden">
+      <div class="grid lg:grid-cols-3 gap-6">
+        <form id="form-pesanan" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+          <h2 class="font-serifjp font-semibold"><i class="fas fa-plus-circle text-vermillion mr-2"></i>Pesanan Baru (PO)</h2>
+          <p class="text-xs text-sumi/50">Kode PO otomatis. Pesanan selesai otomatis jadi penjualan (anti-miss).</p>
+          <div><label class="block text-sm mb-1" for="po-pelanggan">Pelanggan</label><select id="po-pelanggan" required class="form-input"></select></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="block text-sm mb-1" for="po-tgl-pesan">Tgl Pesan</label><input id="po-tgl-pesan" type="date" required class="form-input"></div>
+            <div><label class="block text-sm mb-1" for="po-tgl-kirim">Tgl Kirim</label><input id="po-tgl-kirim" type="date" required class="form-input"></div>
+          </div>
+          <div>
+            <label class="block text-sm mb-1">Item Pesanan</label>
+            <div id="po-items" class="space-y-2"></div>
+            <button type="button" id="po-tambah-item" class="mt-2 text-sm text-vermillion hover:underline"><i class="fas fa-plus mr-1"></i>Tambah item</button>
+          </div>
+          <p class="text-sm">Perkiraan total: <strong id="po-total" class="text-vermillion">Rp 0</strong></p>
+          <div><label class="block text-sm mb-1" for="po-catatan">Catatan</label><input id="po-catatan" type="text" placeholder="cth: antar sebelum jam 7 pagi" class="form-input"></div>
+          <button class="w-full bg-vermillion hover:bg-red-700 text-white py-2.5 rounded-full font-medium transition">Simpan Pesanan</button>
+        </form>
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 class="font-serifjp font-semibold">Daftar Pesanan <span class="text-xs font-normal text-sumi/40">(klik baris untuk item)</span></h2>
+            <select id="po-filter" class="form-input" style="max-width:160px">
+              <option value="">Semua status</option>
+              <option value="baru">Baru</option>
+              <option value="diproses">Diproses</option>
+              <option value="siap">Siap</option>
+              <option value="selesai">Selesai</option>
+              <option value="batal">Batal</option>
+            </select>
+          </div>
+          <table class="w-full text-sm data-table" id="table-pesanan"></table>
+          <div id="po-detail" class="hidden mt-4 border-t pt-4">
+            <h3 class="font-semibold text-sm mb-2" id="po-detail-judul"></h3>
+            <table class="w-full text-sm data-table" id="table-pesanan-item"></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: Stok & Rekonsiliasi -->
+    <section id="tab-stok" class="tab-panel hidden">
+      <div class="grid lg:grid-cols-3 gap-6">
+        <div class="space-y-6">
+          <form id="form-penyesuaian" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+            <h2 class="font-serifjp font-semibold"><i class="fas fa-sliders text-kin mr-2"></i>Penyesuaian Stok</h2>
+            <p class="text-xs text-sumi/50">Jamur keluar bukan karena penjualan: rusak, bonus, sampel, konsumsi sendiri, atau koreksi hitung.</p>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="block text-sm mb-1" for="st-tanggal">Tanggal</label><input id="st-tanggal" type="date" required class="form-input"></div>
+              <div><label class="block text-sm mb-1" for="st-jumlah">Jumlah (kg)</label><input id="st-jumlah" type="number" step="0.1" min="0.1" required class="form-input"></div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="block text-sm mb-1" for="st-jenis">Jenis</label>
+                <select id="st-jenis" class="form-input">
+                  <option value="rusak">Rusak/busuk</option>
+                  <option value="bonus">Bonus pelanggan</option>
+                  <option value="sampel">Sampel/promosi</option>
+                  <option value="konsumsi">Konsumsi sendiri</option>
+                  <option value="koreksi">Koreksi hitung</option>
+                  <option value="lainnya">Lainnya</option>
+                </select>
+              </div>
+              <div><label class="block text-sm mb-1" for="st-arah">Arah</label>
+                <select id="st-arah" class="form-input">
+                  <option value="keluar">Keluar (stok berkurang)</option>
+                  <option value="masuk">Masuk (stok bertambah)</option>
+                </select>
+              </div>
+            </div>
+            <div><label class="block text-sm mb-1" for="st-ket">Keterangan</label><input id="st-ket" type="text" placeholder="cth: bonus warung Bu Sri" class="form-input"></div>
+            <button class="w-full bg-kin hover:bg-yellow-700 text-white py-2.5 rounded-full font-medium transition">Simpan Penyesuaian</button>
+          </form>
+          <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+            <h2 class="font-serifjp font-semibold mb-3">Penyesuaian Terbaru</h2>
+            <table class="w-full text-sm data-table" id="table-penyesuaian"></table>
+          </div>
+        </div>
+        <div class="lg:col-span-2 space-y-6">
+          <div class="bg-white rounded-2xl shadow p-5">
+            <div class="flex flex-wrap items-center gap-3 mb-4">
+              <h2 class="font-serifjp font-semibold"><i class="fas fa-scale-balanced text-matcha mr-2"></i>Rekonsiliasi Harian</h2>
+              <input id="stok-bulan" type="month" class="form-input" style="max-width:180px">
+              <button id="stok-muat" class="bg-sumi text-washi px-4 py-2 rounded-full text-sm hover:bg-black transition"><i class="fas fa-rotate mr-1"></i>Muat</button>
+            </div>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" id="stok-cards"></div>
+            <div id="stok-peringatan" class="hidden mb-3 text-sm bg-vermillion/10 text-vermillion rounded-lg px-4 py-3"></div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm data-table" id="table-stok"></table>
+            </div>
+            <p class="text-xs text-sumi/40 mt-3"><i class="fas fa-circle-info mr-1"></i>Saldo minus (merah) = terjual/keluar lebih banyak dari yang dipanen → ada pencatatan yang terlewat. Produk olahan (berat 0 kg) tidak mengurangi stok segar.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Tab: Produk (admin & owner) -->
     <section id="tab-produk" class="tab-panel hidden">
       <div class="grid lg:grid-cols-3 gap-6">
@@ -257,6 +355,7 @@ export const adminPage = () => `<!DOCTYPE html>
             <div><label class="block text-sm mb-1" for="produk-harga">Harga (Rp)</label><input id="produk-harga" type="number" min="0" required class="form-input"></div>
             <div><label class="block text-sm mb-1" for="produk-satuan">Satuan</label><input id="produk-satuan" type="text" required placeholder="pack/kg" class="form-input"></div>
           </div>
+          <div><label class="block text-sm mb-1" for="produk-berat">Berat Jamur Segar per Unit (kg)</label><input id="produk-berat" type="number" step="0.01" min="0" value="0" class="form-input"><p class="text-xs text-sumi/40 mt-1">Untuk rekonsiliasi stok. Isi 0 untuk produk olahan/baglog (tidak mengurangi stok segar).</p></div>
           <div><label class="block text-sm mb-1" for="produk-deskripsi">Deskripsi</label><textarea id="produk-deskripsi" rows="2" class="form-input"></textarea></div>
           <div><label class="block text-sm mb-1" for="produk-badge">Badge (opsional)</label><input id="produk-badge" type="text" placeholder="Terlaris / Baru / Hemat" class="form-input"></div>
           <div class="flex gap-2">
@@ -364,7 +463,7 @@ export const adminPage = () => `<!DOCTYPE html>
 
     <!-- Tab: Laporan (owner & admin) -->
     <section id="tab-laporan" class="tab-panel hidden">
-      <div class="flex items-center gap-3 mb-5">
+      <div class="flex flex-wrap items-center gap-3 mb-5">
         <label for="laporan-bulan" class="text-sm font-medium">Bulan:</label>
         <input id="laporan-bulan" type="month" class="form-input" style="max-width:200px">
         <button id="laporan-muat" class="bg-sumi text-washi px-5 py-2 rounded-full text-sm hover:bg-black transition"><i class="fas fa-rotate mr-1"></i>Muat</button>
