@@ -3,7 +3,7 @@
 ## Ringkasan Proyek
 - **Nama**: Hiratake — dari bahasa Jepang 平茸 (hiratake) yang berarti "jamur tiram"
 - **Tujuan**: Website profil & pemesanan + sistem pengelolaan usaha terpadu "satu sumber data, nol miss"
-- **Alur data**: Batch Baglog → Kejadian (kontaminasi) → Panen (grade A/B/C + susut) → Penjualan (pelanggan + lunas/tempo) → Piutang
+- **Alur data**: Batch Baglog → Kejadian (kontaminasi) → Panen (grade A/B/C + susut) → Penjualan (pelanggan + lunas/tempo) → Piutang → Keuangan → Laporan Laba/Rugi + HPP
 
 ## URL
 - **Sandbox (Development)**: https://3000-imf9wlpmbjc80capbwebr-5185f4aa.sandbox.novita.ai
@@ -31,6 +31,8 @@
 - ✅ **Piutang**: daftar piutang berjalan diurutkan jatuh tempo, penanda TERLAMBAT otomatis, tombol tagih via WA dengan pesan otomatis
 - ✅ **Pelanggan**: tipe (eceran/warung/resto/reseller), WA, total belanja & piutang per pelanggan
 - ✅ **Produk** (owner/admin), **Pengguna** (owner), **Pengaturan Web** (owner/admin)
+- ✅ **Keuangan** (owner/admin — karyawan tidak melihat uang): pengeluaran per kategori (bahan baku, bibit, gas sterilisasi, listrik/air, gaji, transport, kemasan, perawatan, lainnya) + pemasukan lain di luar penjualan jamur
+- ✅ **Laporan** (owner/admin): pilih bulan → laba/rugi otomatis, HPP per kg, kas masuk vs omzet (akrual vs kas), susut %, kontaminasi, grafik komposisi pengeluaran (doughnut), tabel rinci, dan **insight otomatis** (margin per kg, peringatan susut >5%, piutang >30% omzet)
 
 ## Aturan Anti-Miss yang Ditanam di Sistem
 1. Kejadian baglog tidak boleh melebihi sisa baglog batch
@@ -40,6 +42,8 @@
 5. Batch afkir tidak dihitung sebagai baglog aktif
 6. Semua pencatatan menyimpan siapa pencatatnya
 7. Statistik web depan dihitung dari data transaksi asli (tidak bisa "dikarang")
+8. Kategori pengeluaran dikunci daftar (CHECK constraint) — tidak ada kategori liar
+9. Laba/rugi & HPP dihitung sistem dari transaksi asli, bukan input manual
 
 ## Entri Fungsional Baru (Fase 1)
 | Path | Metode | Peran | Deskripsi |
@@ -56,13 +60,27 @@
 
 (Endpoint lama: lihat riwayat git — auth, panen, penjualan, produk, users tetap berlaku dengan field tambahan)
 
+## Entri Fungsional Baru (Fase 2)
+| Path | Metode | Peran | Deskripsi |
+|------|--------|-------|-----------|
+| `/api/admin/pengeluaran` | GET/POST | owner, admin | Daftar / catat pengeluaran per kategori |
+| `/api/admin/pengeluaran/:id` | DELETE | owner, admin | Hapus pengeluaran |
+| `/api/admin/pemasukan-lain` | GET/POST | owner, admin | Daftar / catat pemasukan lain |
+| `/api/admin/pemasukan-lain/:id` | DELETE | owner, admin | Hapus pemasukan lain |
+| `/api/admin/laporan?bulan=YYYY-MM` | GET | owner, admin | Laporan bulanan: omzet, pengeluaran per kategori, laba/rugi, HPP/kg, kas, susut, kontaminasi |
+
+### Rumus Laporan
+- **Omzet** = total penjualan bulan itu (basis akrual, termasuk tempo)
+- **Kas masuk** = penjualan lunas + tempo yang dilunasi bulan itu (basis kas)
+- **Laba/Rugi** = (omzet + pemasukan lain) − total pengeluaran
+- **HPP per kg** = (total pengeluaran + investasi baglog baru) ÷ kg panen bulan itu
+
 ## Arsitektur Data
 - **Penyimpanan**: Cloudflare D1 (SQLite)
-- **Tabel**: `users`, `sessions`, `produk`, `panen` (+grade/susut/batch), `penjualan` (+pelanggan/status_bayar/jatuh_tempo), `baglog_batch`, `baglog_kejadian`, `pelanggan`, `pengaturan`
-- **Migrasi**: `migrations/0001_initial_schema.sql`, `migrations/0002_fase1_produksi_pelanggan.sql`
+- **Tabel**: `users`, `sessions`, `produk`, `panen` (+grade/susut/batch), `penjualan` (+pelanggan/status_bayar/jatuh_tempo), `baglog_batch`, `baglog_kejadian`, `pelanggan`, `pengaturan`, `pengeluaran`, `pemasukan_lain`
+- **Migrasi**: `migrations/0001_initial_schema.sql`, `migrations/0002_fase1_produksi_pelanggan.sql`, `migrations/0003_fase2_keuangan.sql`
 
 ## Belum Diimplementasikan (Fase Berikutnya)
-- ❌ Fase 2: pengeluaran + kas + laba/rugi + HPP per kg
 - ❌ Fase 3: stok harian + rekonsiliasi panen vs penjualan, pesanan/PO
 - ❌ Fase 4: kondisi kumbung, absensi & kasbon, aset
 - ❌ Deploy produksi ke Cloudflare Pages
@@ -73,7 +91,9 @@
 3. **Panen pagi** → catat di tab Panen: pilih batch, isi kg per grade + susut
 4. **Ada penjualan** → tab Penjualan: pilih produk & pelanggan, pilih lunas/tempo
 5. **Cek piutang** → tab Piutang: tagih yang mendekati/lewat jatuh tempo via tombol WA
-6. **Ganti info web** (WA/alamat/jam) → tab Web → simpan → langsung aktif
+6. **Setiap ada pengeluaran** (beli serbuk, bibit, gas, gaji, dll) → tab Keuangan → catat dengan kategori
+7. **Akhir bulan** → tab Laporan → pilih bulan → lihat laba/rugi, HPP/kg, dan insight otomatis
+8. **Ganti info web** (WA/alamat/jam) → tab Web → simpan → langsung aktif
 
 ## Deployment
 - **Platform**: Cloudflare Pages + D1 (dev: wrangler --local + PM2)
