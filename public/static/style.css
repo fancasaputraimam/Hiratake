@@ -1,1 +1,207 @@
-h1 { font-family: Arial, Helvetica, sans-serif; }
+/* ===== Hiratake — Gaya Jepang ===== */
+
+/* Pola seigaiha (gelombang laut Jepang) halus */
+.seigaiha-bg {
+  background-color: #F7F3EA;
+  background-image: radial-gradient(circle at 100% 150%, #F7F3EA 24%, #EFE8D8 25%, #EFE8D8 28%, #F7F3EA 29%, #F7F3EA 36%, #EFE8D8 36%, #EFE8D8 40%, transparent 40%, transparent),
+    radial-gradient(circle at 0 150%, #F7F3EA 24%, #EFE8D8 25%, #EFE8D8 28%, #F7F3EA 29%, #F7F3EA 36%, #EFE8D8 36%, #EFE8D8 40%, transparent 40%, transparent),
+    radial-gradient(circle at 50% 100%, #EFE8D8 10%, #F7F3EA 11%, #F7F3EA 23%, #EFE8D8 24%, #EFE8D8 30%, #F7F3EA 31%, #F7F3EA 43%, #EFE8D8 44%, #EFE8D8 50%, #F7F3EA 51%, #F7F3EA 63%, #EFE8D8 64%, #EFE8D8 71%, transparent 71%, transparent);
+  background-size: 100px 50px;
+}
+
+/* Cincin enso di hero */
+.enso-ring {
+  position: relative;
+}
+.enso-ring::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border: 3px solid rgba(199, 62, 58, 0.35);
+  border-radius: 50%;
+  border-top-color: transparent;
+  transform: rotate(-30deg);
+}
+
+/* Teks vertikal ala Jepang */
+.vertical-text {
+  writing-mode: vertical-rl;
+}
+
+/* Animasi mengambang logo */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+.float-anim { animation: floaty 5s ease-in-out infinite; }
+
+/* Animasi fade-up saat scroll */
+.fade-up {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.fade-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Kartu keunggulan */
+.feature-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  padding: 1.75rem;
+  transition: transform 0.3s ease, background 0.3s ease;
+}
+.feature-card:hover {
+  transform: translateY(-6px);
+  background: rgba(199, 62, 58, 0.15);
+}
+.feature-card i {
+  font-size: 1.8rem;
+  color: #C9A227;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+.feature-card h3 {
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 0.4rem;
+}
+.feature-card p {
+  font-size: 0.85rem;
+  color: rgba(247, 243, 234, 0.7);
+  line-height: 1.6;
+}
+
+/* Langkah proses */
+.process-step {
+  background: #F7F3EA;
+  border-radius: 1rem;
+  padding: 1.75rem;
+  position: relative;
+  box-shadow: 0 4px 16px rgba(43, 43, 43, 0.06);
+  transition: transform 0.3s ease;
+}
+.process-step:hover { transform: translateY(-6px); }
+.process-step .step-num {
+  font-family: 'Noto Serif JP', serif;
+  font-size: 2.4rem;
+  color: #C73E3A;
+  font-weight: 700;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.process-step h3 {
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+.process-step p {
+  font-size: 0.85rem;
+  color: rgba(43, 43, 43, 0.65);
+  line-height: 1.6;
+}
+
+/* Kartu produk (dibuat oleh app.js) */
+.product-card {
+  background: #fff;
+  border-radius: 1.25rem;
+  padding: 1.75rem;
+  box-shadow: 0 6px 24px rgba(43, 43, 43, 0.08);
+  border: 1px solid rgba(43, 43, 43, 0.05);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.product-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 14px 36px rgba(199, 62, 58, 0.15);
+}
+.product-card .badge {
+  position: absolute;
+  top: 1rem;
+  right: -2.2rem;
+  background: #C73E3A;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 2.5rem;
+  transform: rotate(45deg);
+}
+.product-card .p-icon {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 9999px;
+  background: rgba(199, 62, 58, 0.1);
+  color: #C73E3A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+}
+
+/* Galeri */
+.gallery-img {
+  width: 100%;
+  height: 13rem;
+  object-fit: cover;
+  border-radius: 1rem;
+  box-shadow: 0 4px 14px rgba(43, 43, 43, 0.1);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+  cursor: pointer;
+}
+.gallery-img:hover {
+  transform: scale(1.03);
+  box-shadow: 0 10px 28px rgba(43, 43, 43, 0.2);
+}
+
+/* Form */
+.form-input {
+  width: 100%;
+  border: 1px solid rgba(43, 43, 43, 0.15);
+  border-radius: 0.75rem;
+  padding: 0.7rem 1rem;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-size: 0.9rem;
+}
+.form-input:focus {
+  border-color: #C73E3A;
+  box-shadow: 0 0 0 3px rgba(199, 62, 58, 0.12);
+}
+
+/* Kartu kontak */
+.contact-card {
+  background: #F7F3EA;
+  border-radius: 1rem;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 14px rgba(43, 43, 43, 0.06);
+}
+.contact-card i { font-size: 1.6rem; }
+.contact-card h3 { font-weight: 600; font-size: 0.95rem; }
+.contact-card p { font-size: 0.85rem; color: rgba(43, 43, 43, 0.6); }
+
+/* Tombol sosial footer */
+.social-btn {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 9999px;
+  background: rgba(247, 243, 234, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+.social-btn:hover {
+  background: #C73E3A;
+  color: #fff;
+  transform: translateY(-3px);
+}
