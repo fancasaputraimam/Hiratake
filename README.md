@@ -118,5 +118,7 @@
 - **Platform**: Cloudflare Pages + D1 (dev: wrangler --local + PM2)
 - **Status**: ✅ Aktif (sandbox development)
 - **Tech Stack**: Hono + TypeScript + D1 + TailwindCSS (CDN) + Chart.js
-- **Responsive**: mobile-first, tabel scroll horizontal di HP, tab nav swipe, input anti-zoom iOS
-- **Terakhir Diperbarui**: 2026-08-28 (Fase 3)
+- **Responsive**: mobile-first, sidebar drawer di HP, tabel scroll horizontal, input anti-zoom iOS
+- **UI Form**: semua form tambah/edit berupa modal popup (bottom-sheet di HP, tutup via ✕ / klik luar / Esc)
+- **Data**: 100% asli dari input pengguna — seed hanya berisi akun default & katalog produk, tanpa data transaksi contoh; statistik landing selalu sinkron dengan database
+- **Terakhir Diperbarui**: 2026-08-28 (Modal + pembersihan data mock)

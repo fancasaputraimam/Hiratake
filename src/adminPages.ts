@@ -164,9 +164,17 @@ export const adminPage = () => `<!DOCTYPE html>
 
     <!-- Tab: Baglog -->
     <section id="tab-baglog" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <div class="space-y-6">
-          <form id="form-baglog" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit only-admin-owner">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-cubes text-vermillion mr-2"></i>Baglog</h2>
+        <div class="flex gap-2">
+          <button data-modal="modal-baglog" class="btn-tambah hidden" data-roles="owner,admin"><i class="fas fa-plus mr-1"></i>Batch Baru</button>
+          <button data-modal="modal-kejadian" class="btn-tambah-kin"><i class="fas fa-triangle-exclamation mr-1"></i>Lapor Kejadian</button>
+        </div>
+      </div>
+      <div id="modal-baglog" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-baglog" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-baglog" class="space-y-3">
             <h2 class="font-serifjp font-semibold"><i class="fas fa-plus-circle text-vermillion mr-2"></i>Batch Baglog Baru</h2>
             <p class="text-xs text-sumi/50">Kode batch dibuat otomatis (BG-TAHUN-BULAN-URUT)</p>
             <div><label class="block text-sm mb-1" for="bg-tanggal">Tanggal Produksi/Beli</label><input id="bg-tanggal" type="date" required class="form-input"></div>
@@ -180,7 +188,12 @@ export const adminPage = () => `<!DOCTYPE html>
             <div><label class="block text-sm mb-1" for="bg-catatan">Catatan</label><input id="bg-catatan" type="text" placeholder="opsional" class="form-input"></div>
             <button class="w-full bg-vermillion hover:bg-red-700 text-white py-2.5 rounded-full font-medium transition">Simpan Batch</button>
           </form>
-          <form id="form-kejadian" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+        </div>
+      </div>
+      <div id="modal-kejadian" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-kejadian" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-kejadian" class="space-y-3">
             <h2 class="font-serifjp font-semibold"><i class="fas fa-triangle-exclamation text-kin mr-2"></i>Lapor Kejadian</h2>
             <p class="text-xs text-sumi/50">Kontaminasi / rusak / afkir sebagian — semua peran bisa lapor</p>
             <div><label class="block text-sm mb-1" for="kj-batch">Batch</label><select id="kj-batch" class="form-input"></select></div>
@@ -199,21 +212,27 @@ export const adminPage = () => `<!DOCTYPE html>
             <button class="w-full bg-kin hover:bg-yellow-700 text-white py-2.5 rounded-full font-medium transition">Lapor</button>
           </form>
         </div>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
           <h2 class="font-serifjp font-semibold mb-3">Daftar Batch <span class="text-xs font-normal text-sumi/40">(klik baris untuk riwayat kejadian)</span></h2>
           <table class="w-full text-sm data-table" id="table-baglog"></table>
           <div id="detail-kejadian" class="hidden mt-4 border-t pt-4">
             <h3 class="font-semibold text-sm mb-2" id="detail-kejadian-judul"></h3>
             <table class="w-full text-sm data-table" id="table-kejadian"></table>
           </div>
-        </div>
       </div>
     </section>
 
     <!-- Tab: Panen -->
     <section id="tab-panen" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <form id="form-panen" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-wheat-awn text-matcha mr-2"></i>Panen</h2>
+        <button data-modal="modal-panen" class="btn-tambah-matcha"><i class="fas fa-plus mr-1"></i>Catat Panen</button>
+      </div>
+      <div id="modal-panen" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-panen" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-panen" class="space-y-3">
           <h2 class="font-serifjp font-semibold"><i class="fas fa-plus-circle text-matcha mr-2"></i>Catat Panen</h2>
           <div><label class="block text-sm mb-1" for="panen-tanggal">Tanggal</label><input id="panen-tanggal" type="date" required class="form-input"></div>
           <div><label class="block text-sm mb-1" for="panen-batch">Batch Baglog <span class="text-sumi/40">(disarankan diisi!)</span></label><select id="panen-batch" class="form-input"><option value="">— tanpa batch —</option></select></div>
@@ -228,17 +247,24 @@ export const adminPage = () => `<!DOCTYPE html>
           <div><label class="block text-sm mb-1" for="panen-catatan">Catatan</label><input id="panen-catatan" type="text" placeholder="opsional" class="form-input"></div>
           <button class="w-full bg-matcha hover:bg-green-800 text-white py-2.5 rounded-full font-medium transition">Simpan</button>
         </form>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
-          <h2 class="font-serifjp font-semibold mb-3">Riwayat Panen</h2>
-          <table class="w-full text-sm data-table" id="table-panen"></table>
         </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+        <h2 class="font-serifjp font-semibold mb-3">Riwayat Panen</h2>
+        <table class="w-full text-sm data-table" id="table-panen"></table>
       </div>
     </section>
 
     <!-- Tab: Penjualan -->
     <section id="tab-penjualan" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <form id="form-penjualan" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-cash-register text-kin mr-2"></i>Penjualan</h2>
+        <button data-modal="modal-penjualan" class="btn-tambah-kin"><i class="fas fa-plus mr-1"></i>Catat Penjualan</button>
+      </div>
+      <div id="modal-penjualan" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-penjualan" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-penjualan" class="space-y-3">
           <h2 class="font-serifjp font-semibold"><i class="fas fa-plus-circle text-kin mr-2"></i>Catat Penjualan</h2>
           <div><label class="block text-sm mb-1" for="jual-tanggal">Tanggal</label><input id="jual-tanggal" type="date" required class="form-input"></div>
           <div><label class="block text-sm mb-1" for="jual-produk">Produk</label><select id="jual-produk" class="form-input"></select></div>
@@ -255,17 +281,24 @@ export const adminPage = () => `<!DOCTYPE html>
           <p class="text-sm text-sumi/60">Total: <strong id="jual-total" class="text-vermillion">Rp 0</strong></p>
           <button class="w-full bg-kin hover:bg-yellow-700 text-white py-2.5 rounded-full font-medium transition">Simpan</button>
         </form>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
-          <h2 class="font-serifjp font-semibold mb-3">Riwayat Penjualan</h2>
-          <table class="w-full text-sm data-table" id="table-penjualan"></table>
         </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+        <h2 class="font-serifjp font-semibold mb-3">Riwayat Penjualan</h2>
+        <table class="w-full text-sm data-table" id="table-penjualan"></table>
       </div>
     </section>
 
     <!-- Tab: Pesanan / PO -->
     <section id="tab-pesanan" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <form id="form-pesanan" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-clipboard-list text-vermillion mr-2"></i>Pesanan</h2>
+        <button data-modal="modal-pesanan" class="btn-tambah"><i class="fas fa-plus mr-1"></i>Pesanan Baru</button>
+      </div>
+      <div id="modal-pesanan" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-pesanan" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-pesanan" class="space-y-3">
           <h2 class="font-serifjp font-semibold"><i class="fas fa-plus-circle text-vermillion mr-2"></i>Pesanan Baru (PO)</h2>
           <p class="text-xs text-sumi/50">Kode PO otomatis. Pesanan selesai otomatis jadi penjualan (anti-miss).</p>
           <div><label class="block text-sm mb-1" for="po-pelanggan">Pelanggan</label><select id="po-pelanggan" required class="form-input"></select></div>
@@ -282,7 +315,9 @@ export const adminPage = () => `<!DOCTYPE html>
           <div><label class="block text-sm mb-1" for="po-catatan">Catatan</label><input id="po-catatan" type="text" placeholder="cth: antar sebelum jam 7 pagi" class="form-input"></div>
           <button class="w-full bg-vermillion hover:bg-red-700 text-white py-2.5 rounded-full font-medium transition">Simpan Pesanan</button>
         </form>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h2 class="font-serifjp font-semibold">Daftar Pesanan <span class="text-xs font-normal text-sumi/40">(klik baris untuk item)</span></h2>
             <select id="po-filter" class="form-input" style="max-width:160px">
@@ -299,15 +334,19 @@ export const adminPage = () => `<!DOCTYPE html>
             <h3 class="font-semibold text-sm mb-2" id="po-detail-judul"></h3>
             <table class="w-full text-sm data-table" id="table-pesanan-item"></table>
           </div>
-        </div>
       </div>
     </section>
 
     <!-- Tab: Stok & Rekonsiliasi -->
     <section id="tab-stok" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <div class="space-y-6">
-          <form id="form-penyesuaian" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-boxes-stacked text-matcha mr-2"></i>Stok & Rekonsiliasi</h2>
+        <button data-modal="modal-penyesuaian" class="btn-tambah-kin"><i class="fas fa-plus mr-1"></i>Penyesuaian Stok</button>
+      </div>
+      <div id="modal-penyesuaian" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-penyesuaian" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-penyesuaian" class="space-y-3">
             <h2 class="font-serifjp font-semibold"><i class="fas fa-sliders text-kin mr-2"></i>Penyesuaian Stok</h2>
             <p class="text-xs text-sumi/50">Jamur keluar bukan karena penjualan: rusak, bonus, sampel, konsumsi sendiri, atau koreksi hitung.</p>
             <div class="grid grid-cols-2 gap-3">
@@ -335,12 +374,9 @@ export const adminPage = () => `<!DOCTYPE html>
             <div><label class="block text-sm mb-1" for="st-ket">Keterangan</label><input id="st-ket" type="text" placeholder="cth: bonus warung Bu Sri" class="form-input"></div>
             <button class="w-full bg-kin hover:bg-yellow-700 text-white py-2.5 rounded-full font-medium transition">Simpan Penyesuaian</button>
           </form>
-          <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
-            <h2 class="font-serifjp font-semibold mb-3">Penyesuaian Terbaru</h2>
-            <table class="w-full text-sm data-table" id="table-penyesuaian"></table>
-          </div>
         </div>
-        <div class="lg:col-span-2 space-y-6">
+      </div>
+      <div class="space-y-6">
           <div class="bg-white rounded-2xl shadow p-5">
             <div class="flex flex-wrap items-center gap-3 mb-4">
               <h2 class="font-serifjp font-semibold"><i class="fas fa-scale-balanced text-matcha mr-2"></i>Rekonsiliasi Harian</h2>
@@ -354,14 +390,23 @@ export const adminPage = () => `<!DOCTYPE html>
             </div>
             <p class="text-xs text-sumi/40 mt-3"><i class="fas fa-circle-info mr-1"></i>Saldo minus (merah) = terjual/keluar lebih banyak dari yang dipanen → ada pencatatan yang terlewat. Produk olahan (berat 0 kg) tidak mengurangi stok segar.</p>
           </div>
-        </div>
+          <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+            <h2 class="font-serifjp font-semibold mb-3">Penyesuaian Terbaru</h2>
+            <table class="w-full text-sm data-table" id="table-penyesuaian"></table>
+          </div>
       </div>
     </section>
 
     <!-- Tab: Produk (admin & owner) -->
     <section id="tab-produk" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <form id="form-produk" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-box text-vermillion mr-2"></i>Produk</h2>
+        <button data-modal="modal-produk" class="btn-tambah" id="btn-produk-baru"><i class="fas fa-plus mr-1"></i>Tambah Produk</button>
+      </div>
+      <div id="modal-produk" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-produk" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-produk" class="space-y-3">
           <h2 class="font-serifjp font-semibold" id="produk-form-title"><i class="fas fa-plus-circle text-vermillion mr-2"></i>Tambah Produk</h2>
           <input type="hidden" id="produk-id">
           <div><label class="block text-sm mb-1" for="produk-nama">Nama Produk</label><input id="produk-nama" type="text" required class="form-input"></div>
@@ -378,10 +423,11 @@ export const adminPage = () => `<!DOCTYPE html>
             <button type="button" id="produk-batal" class="hidden px-4 border rounded-full text-sm">Batal</button>
           </div>
         </form>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
-          <h2 class="font-serifjp font-semibold mb-3">Daftar Produk</h2>
-          <table class="w-full text-sm data-table" id="table-produk"></table>
         </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+        <h2 class="font-serifjp font-semibold mb-3">Daftar Produk</h2>
+        <table class="w-full text-sm data-table" id="table-produk"></table>
       </div>
     </section>
 
@@ -398,8 +444,14 @@ export const adminPage = () => `<!DOCTYPE html>
 
     <!-- Tab: Pelanggan -->
     <section id="tab-pelanggan" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <form id="form-pelanggan" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-address-book text-vermillion mr-2"></i>Pelanggan</h2>
+        <button data-modal="modal-pelanggan" class="btn-tambah" id="btn-pelanggan-baru"><i class="fas fa-plus mr-1"></i>Tambah Pelanggan</button>
+      </div>
+      <div id="modal-pelanggan" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-pelanggan" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-pelanggan" class="space-y-3">
           <h2 class="font-serifjp font-semibold" id="pelanggan-form-title"><i class="fas fa-user-plus text-vermillion mr-2"></i>Tambah Pelanggan</h2>
           <input type="hidden" id="pl-id">
           <div><label class="block text-sm mb-1" for="pl-nama">Nama</label><input id="pl-nama" type="text" required class="form-input"></div>
@@ -419,18 +471,27 @@ export const adminPage = () => `<!DOCTYPE html>
             <button type="button" id="pl-batal" class="hidden px-4 border rounded-full text-sm">Batal</button>
           </div>
         </form>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
-          <h2 class="font-serifjp font-semibold mb-3">Daftar Pelanggan</h2>
-          <table class="w-full text-sm data-table" id="table-pelanggan"></table>
         </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+        <h2 class="font-serifjp font-semibold mb-3">Daftar Pelanggan</h2>
+        <table class="w-full text-sm data-table" id="table-pelanggan"></table>
       </div>
     </section>
 
     <!-- Tab: Keuangan (owner & admin) -->
     <section id="tab-keuangan" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <div class="space-y-6">
-          <form id="form-pengeluaran" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-wallet text-vermillion mr-2"></i>Keuangan</h2>
+        <div class="flex gap-2">
+          <button data-modal="modal-pengeluaran" class="btn-tambah"><i class="fas fa-arrow-trend-down mr-1"></i>Pengeluaran</button>
+          <button data-modal="modal-pemasukan" class="btn-tambah-matcha"><i class="fas fa-arrow-trend-up mr-1"></i>Pemasukan Lain</button>
+        </div>
+      </div>
+      <div id="modal-pengeluaran" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-pengeluaran" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-pengeluaran" class="space-y-3">
             <h2 class="font-serifjp font-semibold"><i class="fas fa-arrow-trend-down text-vermillion mr-2"></i>Catat Pengeluaran</h2>
             <div class="grid grid-cols-2 gap-3">
               <div><label class="block text-sm mb-1" for="kl-tanggal">Tanggal</label><input id="kl-tanggal" type="date" required class="form-input"></div>
@@ -452,7 +513,12 @@ export const adminPage = () => `<!DOCTYPE html>
             <div><label class="block text-sm mb-1" for="kl-ket">Keterangan</label><input id="kl-ket" type="text" placeholder="cth: 2 tabung gas" class="form-input"></div>
             <button class="w-full bg-vermillion hover:bg-red-700 text-white py-2.5 rounded-full font-medium transition">Simpan Pengeluaran</button>
           </form>
-          <form id="form-pemasukan" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+        </div>
+      </div>
+      <div id="modal-pemasukan" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-pemasukan" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-pemasukan" class="space-y-3">
             <h2 class="font-serifjp font-semibold"><i class="fas fa-arrow-trend-up text-matcha mr-2"></i>Pemasukan Lain</h2>
             <p class="text-xs text-sumi/50">Di luar penjualan produk — cth: jual baglog afkir untuk pupuk</p>
             <div class="grid grid-cols-2 gap-3">
@@ -463,7 +529,8 @@ export const adminPage = () => `<!DOCTYPE html>
             <button class="w-full bg-matcha hover:bg-green-800 text-white py-2.5 rounded-full font-medium transition">Simpan Pemasukan</button>
           </form>
         </div>
-        <div class="lg:col-span-2 space-y-6">
+      </div>
+      <div class="grid lg:grid-cols-2 gap-6">
           <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
             <h2 class="font-serifjp font-semibold mb-3">Pengeluaran Terbaru</h2>
             <table class="w-full text-sm data-table" id="table-pengeluaran"></table>
@@ -472,7 +539,6 @@ export const adminPage = () => `<!DOCTYPE html>
             <h2 class="font-serifjp font-semibold mb-3">Pemasukan Lain Terbaru</h2>
             <table class="w-full text-sm data-table" id="table-pemasukan"></table>
           </div>
-        </div>
       </div>
     </section>
 
@@ -516,8 +582,14 @@ export const adminPage = () => `<!DOCTYPE html>
 
     <!-- Tab: Pengguna (owner) -->
     <section id="tab-pengguna" class="tab-panel hidden">
-      <div class="grid lg:grid-cols-3 gap-6">
-        <form id="form-user" class="bg-white rounded-2xl shadow p-5 space-y-3 h-fit">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-users text-vermillion mr-2"></i>Pengguna</h2>
+        <button data-modal="modal-user" class="btn-tambah"><i class="fas fa-plus mr-1"></i>Tambah Pengguna</button>
+      </div>
+      <div id="modal-user" class="modal hidden">
+        <div class="modal-box">
+          <button type="button" class="modal-close" data-close="modal-user" aria-label="Tutup"><i class="fas fa-times"></i></button>
+          <form id="form-user" class="space-y-3">
           <h2 class="font-serifjp font-semibold"><i class="fas fa-user-plus text-vermillion mr-2"></i>Tambah Pengguna</h2>
           <div><label class="block text-sm mb-1" for="user-username">Username</label><input id="user-username" type="text" required class="form-input"></div>
           <div><label class="block text-sm mb-1" for="user-nama-input">Nama Lengkap</label><input id="user-nama-input" type="text" required class="form-input"></div>
@@ -532,10 +604,11 @@ export const adminPage = () => `<!DOCTYPE html>
           </div>
           <button class="w-full bg-vermillion hover:bg-red-700 text-white py-2.5 rounded-full font-medium transition">Tambah</button>
         </form>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5 overflow-x-auto">
-          <h2 class="font-serifjp font-semibold mb-3">Daftar Pengguna</h2>
-          <table class="w-full text-sm data-table" id="table-user"></table>
         </div>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+        <h2 class="font-serifjp font-semibold mb-3">Daftar Pengguna</h2>
+        <table class="w-full text-sm data-table" id="table-user"></table>
       </div>
     </section>
   </main>

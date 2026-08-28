@@ -37,8 +37,6 @@ async function api(url, opts = {}) {
       const el = document.getElementById(id); if (el) el.value = hariIni();
     });
 
-    // Karyawan tidak boleh buat batch baru (hanya lapor kejadian)
-    if (ME.role === 'karyawan') document.getElementById('form-baglog')?.classList.add('hidden');
 
     await Promise.all([loadRingkasan(), loadProdukDropdown(), loadBatchDropdown(), loadPelangganDropdown()]);
     document.getElementById('loading-screen').remove();
@@ -54,6 +52,19 @@ document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
   sidebar.classList.contains('open') ? tutupSidebar() : bukaSidebar();
 });
 sidebarOverlay?.addEventListener('click', tutupSidebar);
+
+// ---------- Modal umum ----------
+function bukaModal(id) { document.getElementById(id)?.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
+function tutupModal(id) { document.getElementById(id)?.classList.add('hidden'); document.body.style.overflow = ''; }
+document.querySelectorAll('[data-modal]').forEach((b) => b.addEventListener('click', () => bukaModal(b.dataset.modal)));
+document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => tutupModal(b.dataset.close)));
+document.querySelectorAll('.modal').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) tutupModal(m.id); }));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.modal:not(.hidden)').forEach((m) => tutupModal(m.id));
+});
+// Tombol "baru" produk/pelanggan: reset form sebelum modal terbuka
+document.getElementById('btn-produk-baru')?.addEventListener('click', () => resetFormProduk());
+document.getElementById('btn-pelanggan-baru')?.addEventListener('click', () => resetFormPelanggan());
 
 // ---------- Navigasi tab ----------
 document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -180,6 +191,7 @@ document.getElementById('form-baglog')?.addEventListener('submit', async (e) => 
       catatan: document.getElementById('bg-catatan').value.trim()
     })});
     toast(`Batch ${r.kode} dibuat ✅`);
+    tutupModal('modal-baglog');
     document.getElementById('form-baglog').reset();
     document.getElementById('bg-tanggal').value = hariIni();
     document.getElementById('bg-sumber').value = 'produksi sendiri';
@@ -199,6 +211,7 @@ document.getElementById('form-kejadian')?.addEventListener('submit', async (e) =
       catatan: document.getElementById('kj-catatan').value.trim()
     })});
     toast(`Kejadian dicatat. Sisa baglog batch: ${r.sisa}`);
+    tutupModal('modal-kejadian');
     document.getElementById('kj-jumlah').value = ''; document.getElementById('kj-catatan').value = '';
     loadBaglog();
   } catch (ex) { toast(ex.message, false); }
@@ -243,6 +256,7 @@ document.getElementById('form-panen').addEventListener('submit', async (e) => {
       catatan: document.getElementById('panen-catatan').value.trim()
     })});
     toast('Panen berhasil dicatat 🍄');
+    tutupModal('modal-panen');
     ['panen-ga', 'panen-gb', 'panen-gc', 'panen-susut', 'panen-catatan'].forEach((id) => document.getElementById(id).value = '');
     previewTotalPanen();
     loadPanen();
@@ -321,6 +335,7 @@ document.getElementById('form-penjualan').addEventListener('submit', async (e) =
       jatuh_tempo: document.getElementById('jual-tempo').value || null
     })});
     toast('Penjualan berhasil dicatat 💰');
+    tutupModal('modal-penjualan');
     document.getElementById('jual-jumlah').value = 1; document.getElementById('jual-pembeli').value = '';
     document.getElementById('jual-bayar').value = 'lunas';
     document.getElementById('jual-tempo-wrap').classList.add('hidden');
@@ -448,6 +463,7 @@ document.getElementById('form-pesanan')?.addEventListener('submit', async (e) =>
       item
     })});
     toast(`Pesanan ${r.kode} dibuat 📋`);
+    tutupModal('modal-pesanan');
     document.getElementById('po-catatan').value = '';
     document.getElementById('po-items').innerHTML = '';
     tambahBarisItemPO();
@@ -523,6 +539,7 @@ document.getElementById('form-penyesuaian')?.addEventListener('submit', async (e
       keterangan: document.getElementById('st-ket').value.trim()
     })});
     toast('Penyesuaian stok dicatat ✅');
+    tutupModal('modal-penyesuaian');
     document.getElementById('st-jumlah').value = ''; document.getElementById('st-ket').value = '';
     loadStok();
   } catch (ex) { toast(ex.message, false); }
@@ -581,6 +598,7 @@ async function loadPelanggan() {
 }
 
 window.editPelanggan = (p) => {
+  bukaModal('modal-pelanggan');
   document.getElementById('pl-id').value = p.id;
   document.getElementById('pl-nama').value = p.nama;
   document.getElementById('pl-tipe').value = p.tipe;
@@ -591,11 +609,15 @@ window.editPelanggan = (p) => {
   document.getElementById('pl-batal').classList.remove('hidden');
 };
 
-document.getElementById('pl-batal')?.addEventListener('click', () => {
+function resetFormPelanggan() {
   document.getElementById('form-pelanggan').reset();
   document.getElementById('pl-id').value = '';
   document.getElementById('pelanggan-form-title').innerHTML = '<i class="fas fa-user-plus text-vermillion mr-2"></i>Tambah Pelanggan';
   document.getElementById('pl-batal').classList.add('hidden');
+}
+document.getElementById('pl-batal')?.addEventListener('click', () => {
+  resetFormPelanggan();
+  tutupModal('modal-pelanggan');
 });
 
 document.getElementById('form-pelanggan')?.addEventListener('submit', async (e) => {
@@ -613,7 +635,8 @@ document.getElementById('form-pelanggan')?.addEventListener('submit', async (e) 
     if (id) await api('/api/admin/pelanggan/' + id, { method: 'PUT', body: JSON.stringify(body) });
     else await api('/api/admin/pelanggan', { method: 'POST', body: JSON.stringify(body) });
     toast(id ? 'Pelanggan diperbarui ✅' : 'Pelanggan ditambahkan 👤');
-    document.getElementById('pl-batal').click();
+    tutupModal('modal-pelanggan');
+    resetFormPelanggan();
     loadPelanggan(); loadPelangganDropdown();
   } catch (ex) { toast(ex.message, false); }
 });
@@ -659,6 +682,7 @@ document.getElementById('form-pengeluaran')?.addEventListener('submit', async (e
       keterangan: document.getElementById('kl-ket').value.trim()
     })});
     toast('Pengeluaran dicatat 💸');
+    tutupModal('modal-pengeluaran');
     document.getElementById('kl-jumlah').value = ''; document.getElementById('kl-ket').value = '';
     loadKeuangan();
   } catch (ex) { toast(ex.message, false); }
@@ -673,6 +697,7 @@ document.getElementById('form-pemasukan')?.addEventListener('submit', async (e) 
       keterangan: document.getElementById('pm-ket').value.trim()
     })});
     toast('Pemasukan dicatat 💰');
+    tutupModal('modal-pemasukan');
     document.getElementById('pm-jumlah').value = ''; document.getElementById('pm-ket').value = '';
     loadKeuangan();
   } catch (ex) { toast(ex.message, false); }
@@ -797,6 +822,7 @@ async function loadProduk() {
 }
 
 window.editProduk = (p) => {
+  bukaModal('modal-produk');
   document.getElementById('produk-id').value = p.id;
   document.getElementById('produk-nama').value = p.nama;
   document.getElementById('produk-jp').value = p.jp || '';
@@ -807,10 +833,12 @@ window.editProduk = (p) => {
   document.getElementById('produk-badge').value = p.badge || '';
   document.getElementById('produk-form-title').innerHTML = '<i class="fas fa-pen text-blue-500 mr-2"></i>Ubah Produk';
   document.getElementById('produk-batal').classList.remove('hidden');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
-document.getElementById('produk-batal').addEventListener('click', resetFormProduk);
+document.getElementById('produk-batal').addEventListener('click', () => {
+  resetFormProduk();
+  tutupModal('modal-produk');
+});
 function resetFormProduk() {
   document.getElementById('form-produk').reset();
   document.getElementById('produk-id').value = '';
@@ -835,6 +863,7 @@ document.getElementById('form-produk').addEventListener('submit', async (e) => {
     if (id) await api('/api/admin/produk/' + id, { method: 'PUT', body: JSON.stringify(body) });
     else await api('/api/admin/produk', { method: 'POST', body: JSON.stringify(body) });
     toast(id ? 'Produk diperbarui ✅' : 'Produk ditambahkan ✅');
+    tutupModal('modal-produk');
     resetFormProduk(); loadProduk(); loadProdukDropdown();
   } catch (ex) { toast(ex.message, false); }
 });
@@ -880,6 +909,7 @@ document.getElementById('form-user').addEventListener('submit', async (e) => {
       role: document.getElementById('user-role-input').value
     })});
     toast('Pengguna berhasil ditambahkan 👤');
+    tutupModal('modal-user');
     document.getElementById('form-user').reset(); loadUsers();
   } catch (ex) { toast(ex.message, false); }
 });

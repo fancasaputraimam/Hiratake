@@ -13,14 +13,6 @@ INSERT OR IGNORE INTO produk (id, nama, jp, harga, satuan, deskripsi, ikon, badg
   (5, 'Baglog Siap Panen', '菌床ブロック', 20000, 'baglog', 'Media tanam siap panen, cocok untuk edukasi & hobi.', 'fa-cubes', NULL),
   (6, 'Paket Grosir 10kg+', '卸売パック', 250000, 'paket', 'Harga khusus mitra restoran & reseller, pasokan rutin.', 'fa-handshake', 'Mitra');
 
--- Contoh data panen
-INSERT OR IGNORE INTO panen (id, tanggal, jumlah_kg, catatan, user_id) VALUES
-  (1, date('now', '-2 days'), 24.5, 'Panen pagi normal', 3),
-  (2, date('now', '-1 days'), 26.0, 'Kualitas bagus', 3),
-  (3, date('now'), 23.8, 'Panen pagi', 3);
-
--- Contoh data penjualan
-INSERT OR IGNORE INTO penjualan (id, tanggal, produk_id, nama_produk, jumlah, total, pembeli, user_id) VALUES
-  (1, date('now', '-1 days'), 3, 'Jamur Tiram Segar 1kg', 10, 280000, 'Warung Bu Sari', 2),
-  (2, date('now', '-1 days'), 1, 'Jamur Tiram Segar 250g', 15, 120000, 'Pelanggan eceran', 2),
-  (3, date('now'), 6, 'Paket Grosir 10kg+', 1, 250000, 'Resto Sakura', 2);
+-- Tidak ada data contoh/mock. Semua data transaksi (panen, penjualan, dll)
+-- murni berasal dari input pengguna melalui dashboard, sehingga landing page
+-- selalu sinkron dengan data asli.
