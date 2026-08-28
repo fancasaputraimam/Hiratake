@@ -52,21 +52,50 @@ function pesanProduk(id) {
 }
 
 // Form pemesanan → WhatsApp
-document.getElementById('order-form').addEventListener('submit', (e) => {
+document.getElementById('order-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const nama = document.getElementById('order-name').value.trim();
+  const wa = document.getElementById('order-wa').value.trim();
   const id = parseInt(document.getElementById('order-product').value);
-  const qty = document.getElementById('order-qty').value;
+  const qty = parseInt(document.getElementById('order-qty').value) || 1;
   const note = document.getElementById('order-note').value.trim();
   const p = produkList.find((x) => x.id === id);
   if (!p) return;
 
-  const total = p.harga * parseInt(qty || 1);
-  let pesan = `Halo Hiratake! 🍄\nSaya *${nama}* ingin memesan:\n\n• Produk: ${p.nama}\n• Jumlah: ${qty} ${p.satuan}\n• Estimasi total: ${rupiah(total)}`;
-  if (note) pesan += `\n• Catatan: ${note}`;
-  pesan += '\n\nMohon konfirmasinya. Terima kasih!';
+  const tombol = document.getElementById('order-submit');
+  const hasil = document.getElementById('order-hasil');
+  tombol.disabled = true;
+  tombol.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Mengirim...';
 
-  window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(pesan)}`, '_blank');
+  try {
+    // 1. Simpan pesanan ke sistem (database asli)
+    const res = await fetch('/api/pesan-online', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nama, wa, alamat: note, catatan: note, item: [{ produk_id: id, jumlah: qty }] })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Gagal mengirim pesanan.');
+
+    hasil.className = 'text-sm text-center rounded-xl p-3 bg-green-100 text-green-800';
+    hasil.innerHTML = `✅ Pesanan <strong>${data.kode}</strong> tercatat! Total estimasi ${rupiah(data.total)}.<br>Membuka WhatsApp untuk konfirmasi...`;
+    hasil.classList.remove('hidden');
+
+    // 2. Buka WA untuk konfirmasi (bawa kode pesanan)
+    let pesan = `Halo Hiratake! 🍄\nSaya *${nama}* baru saja memesan lewat website:\n\n• Kode: ${data.kode}\n• Produk: ${p.nama}\n• Jumlah: ${qty} ${p.satuan}\n• Estimasi total: ${rupiah(data.total)}`;
+    if (note) pesan += `\n• Alamat/Catatan: ${note}`;
+    pesan += '\n\nMohon konfirmasinya. Terima kasih!';
+    setTimeout(() => window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(pesan)}`, '_blank'), 800);
+    document.getElementById('order-form').reset();
+    document.getElementById('order-qty').value = 1;
+  } catch (err) {
+    hasil.className = 'text-sm text-center rounded-xl p-3 bg-red-100 text-red-700';
+    hasil.textContent = '⚠️ ' + err.message;
+    hasil.classList.remove('hidden');
+  } finally {
+    tombol.disabled = false;
+    tombol.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Kirim Pesanan';
+  }
 });
 
 // Menu mobile

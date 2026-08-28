@@ -3,7 +3,7 @@ import { setCookie, deleteCookie, getCookie } from 'hono/cookie'
 import { loginPage, adminPage } from './adminPages'
 import {
   type Bindings, type SessionUser,
-  verifyPassword, hashPassword, generateToken, getSessionUser, requireAuth
+  verifyPassword, hashPassword, generateToken, getSessionUser, requireAuth, catatAudit
 } from './auth'
 
 const app = new Hono<{ Bindings: Bindings; Variables: { user: SessionUser } }>()
@@ -41,6 +41,9 @@ app.get('/', async (c) => {
   <title>Hiratake — Jamur Tiram Segar Berkualitas | ヒラタケ</title>
   <meta name="description" content="Hiratake adalah usaha budidaya jamur tiram segar berkualitas premium. Dipanen setiap hari, higienis, dan bergizi tinggi.">
   <link rel="icon" type="image/png" href="/static/logo-hiratake.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#C73E3A">
+  <link rel="apple-touch-icon" href="/static/logo-hiratake.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -252,13 +255,17 @@ app.get('/', async (c) => {
         <p class="text-vermillion font-serifjp tracking-[0.3em] text-sm mb-2">ご注文</p>
         <h2 class="font-serifjp text-3xl md:text-4xl font-bold">Pesan Sekarang</h2>
         <div class="w-16 h-1 bg-vermillion mx-auto mt-4 rounded"></div>
-        <p class="text-sumi/60 mt-4">Isi formulir di bawah, pesanan Anda akan langsung terhubung ke WhatsApp kami.</p>
+        <p class="text-sumi/60 mt-4">Pesanan Anda <strong>langsung tercatat di sistem kami</strong> dan terhubung ke WhatsApp untuk konfirmasi.</p>
       </div>
       <div class="grid md:grid-cols-2 gap-10">
         <form id="order-form" class="bg-washi rounded-2xl p-7 shadow-lg space-y-4 fade-up">
           <div>
             <label for="order-name" class="block text-sm font-medium mb-1">Nama</label>
             <input id="order-name" type="text" required placeholder="Nama Anda" class="form-input">
+          </div>
+          <div>
+            <label for="order-wa" class="block text-sm font-medium mb-1">Nomor WhatsApp</label>
+            <input id="order-wa" type="tel" required placeholder="081234567890" class="form-input">
           </div>
           <div>
             <label for="order-product" class="block text-sm font-medium mb-1">Produk</label>
@@ -269,12 +276,13 @@ app.get('/', async (c) => {
             <input id="order-qty" type="number" min="1" value="1" required class="form-input">
           </div>
           <div>
-            <label for="order-note" class="block text-sm font-medium mb-1">Catatan (opsional)</label>
+            <label for="order-note" class="block text-sm font-medium mb-1">Alamat & Catatan (opsional)</label>
             <textarea id="order-note" rows="3" placeholder="Alamat pengiriman / permintaan khusus" class="form-input"></textarea>
           </div>
-          <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-full transition shadow">
-            <i class="fab fa-whatsapp mr-2"></i>Kirim Pesanan via WhatsApp
+          <button type="submit" id="order-submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-full transition shadow">
+            <i class="fas fa-paper-plane mr-2"></i>Kirim Pesanan
           </button>
+          <p id="order-hasil" class="hidden text-sm text-center rounded-xl p-3"></p>
         </form>
         <aside class="fade-up space-y-6">
           <div class="contact-card"><i class="fab fa-whatsapp text-green-600"></i><div><h3>WhatsApp</h3><p>${waTampil}</p></div></div>
@@ -342,6 +350,76 @@ app.get('/login', async (c) => {
   return c.html(loginPage())
 })
 
+// Halaman nota cetak (wajib login — data via API)
+app.get('/nota/:jenis/:id', async (c) => {
+  const user = await getSessionUser(c)
+  if (!user) return c.redirect('/login')
+  const { jenis, id } = c.req.param()
+  return c.html(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nota — Hiratake</title>
+  <link rel="icon" type="image/png" href="/static/logo-hiratake.png">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #eee; color: #2B2B2B; padding: 1rem; }
+    .nota { max-width: 420px; margin: 0 auto; background: #fff; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+    .kepala { text-align: center; border-bottom: 2px dashed #ccc; padding-bottom: .75rem; margin-bottom: .75rem; }
+    .kepala img { width: 56px; height: 56px; border-radius: 50%; }
+    .kepala h1 { font-size: 1.1rem; letter-spacing: .1em; color: #C73E3A; }
+    .kepala p { font-size: .7rem; color: #777; }
+    .baris { display: flex; justify-content: space-between; font-size: .8rem; padding: .15rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: .6rem 0; font-size: .8rem; }
+    th { text-align: left; border-bottom: 1px solid #ddd; padding: .3rem 0; font-size: .7rem; color: #888; }
+    td { padding: .3rem 0; border-bottom: 1px dotted #eee; }
+    td.angka, th.angka { text-align: right; }
+    .total { display: flex; justify-content: space-between; font-weight: 700; font-size: .95rem; border-top: 2px dashed #ccc; padding-top: .6rem; margin-top: .3rem; }
+    .kaki { text-align: center; font-size: .65rem; color: #999; margin-top: 1rem; }
+    .aksi { max-width: 420px; margin: 1rem auto; display: flex; gap: .5rem; }
+    .aksi button, .aksi a { flex: 1; padding: .7rem; border: 0; border-radius: 99px; font-size: .85rem; cursor: pointer; text-align: center; text-decoration: none; }
+    .cetak { background: #C73E3A; color: #fff; }
+    .kembali { background: #2B2B2B; color: #fff; }
+    @media print { body { background: #fff; padding: 0; } .aksi { display: none; } .nota { box-shadow: none; max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="nota" id="nota"><p style="text-align:center;padding:2rem 0;color:#999">Memuat nota…</p></div>
+  <div class="aksi">
+    <a href="/admin" class="kembali">← Kembali</a>
+    <button class="cetak" onclick="window.print()">🖨 Cetak / Simpan PDF</button>
+  </div>
+  <script>
+    const rp = (n) => 'Rp ' + Number(n||0).toLocaleString('id-ID');
+    fetch('/api/admin/nota/${jenis}/${id}').then(r => r.json()).then(({ nota, cfg, error }) => {
+      if (error) { document.getElementById('nota').innerHTML = '<p style="text-align:center;padding:2rem 0;color:#C73E3A">' + error + '</p>'; return; }
+      document.getElementById('nota').innerHTML = \`
+        <div class="kepala">
+          <img src="/static/logo-hiratake.png" alt="Hiratake">
+          <h1>HIRATAKE 平茸</h1>
+          <p>Jamur Tiram Segar Berkualitas</p>
+          <p>\${(cfg && cfg.alamat) || ''}</p>
+          <p>WA: +\${(cfg && cfg.wa_nomor) || ''}</p>
+        </div>
+        <div class="baris"><span>No. Nota</span><strong>\${nota.kode}</strong></div>
+        <div class="baris"><span>Tanggal</span><span>\${nota.tanggal}</span></div>
+        \${nota.tanggal_kirim ? '<div class="baris"><span>Tgl Kirim</span><span>' + nota.tanggal_kirim + '</span></div>' : ''}
+        <div class="baris"><span>Pembeli</span><span>\${nota.pembeli || '-'}</span></div>
+        \${nota.alamat ? '<div class="baris"><span>Alamat</span><span style="text-align:right;max-width:60%">' + nota.alamat + '</span></div>' : ''}
+        <table>
+          <thead><tr><th>Item</th><th class="angka">Qty</th><th class="angka">Harga</th><th class="angka">Subtotal</th></tr></thead>
+          <tbody>\${nota.item.map(i => '<tr><td>' + i.nama + '</td><td class="angka">' + i.jumlah + '</td><td class="angka">' + rp(i.harga) + '</td><td class="angka">' + rp(i.subtotal) + '</td></tr>').join('')}</tbody>
+        </table>
+        <div class="total"><span>TOTAL</span><span>\${rp(nota.total)}</span></div>
+        \${nota.status_bayar === 'tempo' ? '<div class="baris" style="color:#C73E3A;margin-top:.4rem"><span>Status</span><strong>TEMPO — jatuh tempo ' + (nota.jatuh_tempo || '') + '</strong></div>' : ''}
+        <p class="kaki">Terima kasih telah berbelanja 🍄<br>ご購入ありがとうございます</p>\`;
+    });
+  </script>
+</body>
+</html>`)
+})
+
 app.get('/admin', async (c) => {
   const user = await getSessionUser(c)
   if (!user) return c.redirect('/login')
@@ -353,19 +431,34 @@ app.get('/admin', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { username, password } = await c.req.json<{ username: string; password: string }>()
   if (!username || !password) return c.json({ error: 'Username dan kata sandi wajib diisi.' }, 400)
+  const uname = username.toLowerCase()
+
+  // Rate limit: maksimal 5 percobaan gagal per username dalam 5 menit (anti brute-force)
+  const gagal = await c.env.DB.prepare(
+    "SELECT COUNT(*) v FROM login_attempts WHERE username = ? AND sukses = 0 AND created_at > datetime('now','-5 minutes')"
+  ).bind(uname).first<any>()
+  if ((gagal?.v ?? 0) >= 5) {
+    return c.json({ error: 'Terlalu banyak percobaan gagal. Tunggu 5 menit lalu coba lagi.' }, 429)
+  }
 
   const user = await c.env.DB.prepare(
     'SELECT id, username, password_hash, nama, role, aktif FROM users WHERE username = ?'
-  ).bind(username.toLowerCase()).first<any>()
+  ).bind(uname).first<any>()
 
   if (!user || !user.aktif || !(await verifyPassword(password, user.password_hash))) {
+    await c.env.DB.prepare('INSERT INTO login_attempts (username, sukses) VALUES (?, 0)').bind(uname).run()
     return c.json({ error: 'Username atau kata sandi salah.' }, 401)
   }
 
   const token = generateToken()
-  await c.env.DB.prepare(
-    "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))"
-  ).bind(token, user.id).run()
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").bind(token, user.id),
+    c.env.DB.prepare('INSERT INTO login_attempts (username, sukses) VALUES (?, 1)').bind(uname),
+    // Housekeeping ringan: bersihkan sesi kedaluwarsa & catatan login lama
+    c.env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')"),
+    c.env.DB.prepare("DELETE FROM login_attempts WHERE created_at < datetime('now','-1 day')")
+  ])
+  await catatAudit(c.env.DB, { id: user.id, nama: user.nama }, 'login', 'auth', user.id, 'Login berhasil')
 
   setCookie(c, 'hiratake_session', token, {
     httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 24 * 7
@@ -386,6 +479,26 @@ app.get('/api/auth/me', async (c) => {
   return c.json({ user })
 })
 
+// Ganti kata sandi sendiri (semua role)
+app.put('/api/auth/password', requireAuth(), async (c) => {
+  const { sandi_lama, sandi_baru } = await c.req.json()
+  if (!sandi_lama || !sandi_baru) return c.json({ error: 'Sandi lama dan baru wajib diisi.' }, 400)
+  if (String(sandi_baru).length < 6) return c.json({ error: 'Sandi baru minimal 6 karakter.' }, 400)
+  const me = c.get('user')
+  const u = await c.env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(me.id).first<any>()
+  if (!u || !(await verifyPassword(sandi_lama, u.password_hash))) {
+    return c.json({ error: 'Kata sandi lama salah.' }, 400)
+  }
+  const tokenIni = getCookie(c, 'hiratake_session') || ''
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(await hashPassword(sandi_baru), me.id),
+    // Keamanan: logout dari semua perangkat lain, sesi ini tetap aktif
+    c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').bind(me.id, tokenIni)
+  ])
+  await catatAudit(c.env.DB, me, 'ubah', 'auth', me.id, 'Ganti kata sandi sendiri')
+  return c.json({ sukses: true })
+})
+
 // ============ API PUBLIK ============
 
 // Daftar produk aktif (dipakai halaman depan)
@@ -394,6 +507,56 @@ app.get('/api/produk', async (c) => {
     'SELECT id, nama, jp, harga, satuan, deskripsi, ikon, badge FROM produk WHERE aktif = 1 ORDER BY id'
   ).all()
   return c.json({ produk: results })
+})
+
+// Pesanan dari pengunjung web (landing) — masuk sebagai PO status 'baru', sumber 'web'
+app.post('/api/pesan-online', async (c) => {
+  const { nama, wa, alamat, item, catatan } = await c.req.json()
+  if (!nama || !String(nama).trim()) return c.json({ error: 'Nama wajib diisi.' }, 400)
+  const waBersih = String(wa || '').replace(/[^0-9]/g, '')
+  if (!/^\d{9,15}$/.test(waBersih)) return c.json({ error: 'Nomor WhatsApp tidak valid (contoh: 081234567890).' }, 400)
+  if (!Array.isArray(item) || item.length === 0) return c.json({ error: 'Pilih minimal 1 produk.' }, 400)
+
+  // Anti-spam sederhana: maksimal 3 pesanan per nomor WA per hari
+  const waNormal = waBersih.replace(/^0/, '62')
+  const spam = await c.env.DB.prepare(
+    "SELECT COUNT(*) v FROM pesanan ps JOIN pelanggan pl ON pl.id = ps.pelanggan_id WHERE pl.wa = ? AND ps.created_at > datetime('now','-1 day')"
+  ).bind(waNormal).first<any>()
+  if ((spam?.v ?? 0) >= 3) return c.json({ error: 'Terlalu banyak pesanan hari ini. Hubungi kami via WhatsApp langsung ya.' }, 429)
+
+  // Validasi item & harga dari DB
+  const barisItem: any[] = []
+  for (const it of item) {
+    const jml = parseInt(it.jumlah)
+    if (!it.produk_id || !jml || jml <= 0 || jml > 1000) continue
+    const p = await c.env.DB.prepare('SELECT id, nama, harga FROM produk WHERE id = ? AND aktif = 1').bind(it.produk_id).first<any>()
+    if (p) barisItem.push({ produk_id: p.id, nama_produk: p.nama, jumlah: jml, harga: p.harga, subtotal: p.harga * jml })
+  }
+  if (!barisItem.length) return c.json({ error: 'Produk yang dipilih tidak valid.' }, 400)
+
+  // Cari / buat pelanggan berdasarkan nomor WA
+  let pel = await c.env.DB.prepare('SELECT id FROM pelanggan WHERE wa = ?').bind(waNormal).first<any>()
+  if (!pel) {
+    const r = await c.env.DB.prepare(
+      "INSERT INTO pelanggan (nama, tipe, wa, alamat, catatan, aktif) VALUES (?, 'eceran', ?, ?, 'Daftar sendiri via web', 1)"
+    ).bind(String(nama).trim().slice(0, 60), waNormal, String(alamat || '').trim().slice(0, 200)).run()
+    pel = { id: r.meta.last_row_id }
+  }
+
+  const hariIni = new Date().toISOString().slice(0, 10)
+  const bulan = hariIni.slice(0, 7)
+  const n = await c.env.DB.prepare('SELECT COUNT(*) v FROM pesanan WHERE kode LIKE ?').bind(`PO-${bulan}-%`).first<any>()
+  const kode = `PO-${bulan}-${String((n?.v ?? 0) + 1).padStart(3, '0')}`
+  const res = await c.env.DB.prepare(
+    "INSERT INTO pesanan (kode, pelanggan_id, tanggal_pesan, tanggal_kirim, status, catatan, sumber) VALUES (?, ?, ?, ?, 'baru', ?, 'web')"
+  ).bind(kode, pel.id, hariIni, hariIni, String(catatan || '').trim().slice(0, 300)).run()
+  await c.env.DB.batch(barisItem.map(b =>
+    c.env.DB.prepare('INSERT INTO pesanan_item (pesanan_id, produk_id, nama_produk, jumlah, harga, subtotal) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(res.meta.last_row_id, b.produk_id, b.nama_produk, b.jumlah, b.harga, b.subtotal)
+  ))
+  await catatAudit(c.env.DB, null, 'tambah', 'pesanan-web', kode, `Dari web: ${nama} (${waNormal})`)
+  const total = barisItem.reduce((a, b) => a + b.subtotal, 0)
+  return c.json({ sukses: true, kode, total })
 })
 
 // ============ API PENGELOLAAN (WAJIB LOGIN) ============
@@ -427,7 +590,10 @@ app.get('/api/admin/ringkasan', requireAuth(), async (c) => {
       FROM panen p WHERE p.batch_id IS NOT NULL
     `).first<any>()
   ])
+  const targetCfg = await db.prepare("SELECT value FROM pengaturan WHERE key='target_kg_bulanan'").first<any>()
+  const targetKg = parseFloat(targetCfg?.value || '0') || 0
   return c.json({
+    targetKg,
     panenHariIni: panenHariIni.v, panenBulanIni: panenBulanIni.v,
     jualHariIni: jualHariIni.v, jualBulanIni: jualBulanIni.v,
     grafikPanen: panen7.results, grafikPenjualan: jual7.results,
@@ -440,14 +606,35 @@ app.get('/api/admin/ringkasan', requireAuth(), async (c) => {
   })
 })
 
+// --- Notifikasi (badge sidebar: piutang telat, PO baru dari web, batch tua) ---
+app.get('/api/admin/notifikasi', requireAuth(), async (c) => {
+  const db = c.env.DB
+  const [telat, jatuhTempoDekat, poWeb, batchTua] = await Promise.all([
+    db.prepare("SELECT COUNT(*) n, COALESCE(SUM(total),0) v FROM penjualan WHERE status_bayar='tempo' AND jatuh_tempo < date('now')").first<any>(),
+    db.prepare("SELECT COUNT(*) n FROM penjualan WHERE status_bayar='tempo' AND jatuh_tempo BETWEEN date('now') AND date('now','+3 days')").first<any>(),
+    db.prepare("SELECT COUNT(*) n FROM pesanan WHERE sumber='web' AND status='baru'").first<any>(),
+    db.prepare(`SELECT kode, tanggal, CAST(julianday('now') - julianday(tanggal) AS INTEGER) AS umur_hari
+      FROM baglog_batch WHERE status='produktif' AND julianday('now') - julianday(tanggal) > 100 ORDER BY tanggal LIMIT 5`).all()
+  ])
+  return c.json({
+    piutangTelat: { jumlah: telat?.n ?? 0, total: telat?.v ?? 0 },
+    piutangDekat: jatuhTempoDekat?.n ?? 0,
+    pesananWebBaru: poWeb?.n ?? 0,
+    batchTua: batchTua.results
+  })
+})
+
 // --- Panen (semua role bisa catat & lihat) ---
 app.get('/api/admin/panen', requireAuth(), async (c) => {
-  const { results } = await c.env.DB.prepare(`
+  const bulan = c.req.query('bulan') // opsional YYYY-MM
+  const base = `
     SELECT p.id, p.tanggal, p.jumlah_kg, p.grade_a, p.grade_b, p.grade_c, p.susut_kg, p.catatan,
            u.nama AS pencatat, b.kode AS batch_kode
-    FROM panen p LEFT JOIN users u ON u.id = p.user_id LEFT JOIN baglog_batch b ON b.id = p.batch_id
-    ORDER BY p.tanggal DESC, p.id DESC LIMIT 100
-  `).all()
+    FROM panen p LEFT JOIN users u ON u.id = p.user_id LEFT JOIN baglog_batch b ON b.id = p.batch_id`
+  const q = bulan && /^\d{4}-\d{2}$/.test(bulan)
+    ? c.env.DB.prepare(base + " WHERE strftime('%Y-%m', p.tanggal) = ? ORDER BY p.tanggal DESC, p.id DESC").bind(bulan)
+    : c.env.DB.prepare(base + ' ORDER BY p.tanggal DESC, p.id DESC LIMIT 100')
+  const { results } = await q.all()
   return c.json({ panen: results })
 })
 
@@ -465,25 +652,32 @@ app.post('/api/admin/panen', requireAuth(), async (c) => {
       await c.env.DB.prepare("UPDATE baglog_batch SET status = 'produktif' WHERE id = ?").bind(batch_id).run()
     }
   }
-  await c.env.DB.prepare(
+  const res = await c.env.DB.prepare(
     'INSERT INTO panen (tanggal, jumlah_kg, grade_a, grade_b, grade_c, susut_kg, batch_id, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(tanggal, total, ga, gb, gc, susut, batch_id || null, catatan || '', c.get('user').id).run()
-  return c.json({ sukses: true, total })
+  const id = res.meta.last_row_id
+  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'panen', id, `${total} kg (${tanggal})`)
+  return c.json({ sukses: true, id, total })
 })
 
 app.delete('/api/admin/panen/:id', requireAuth(['owner', 'admin']), async (c) => {
-  await c.env.DB.prepare('DELETE FROM panen WHERE id = ?').bind(c.req.param('id')).run()
+  const id = c.req.param('id')
+  await c.env.DB.prepare('DELETE FROM panen WHERE id = ?').bind(id).run()
+  await catatAudit(c.env.DB, c.get('user'), 'hapus', 'panen', id)
   return c.json({ sukses: true })
 })
 
 // --- Penjualan (semua role bisa catat & lihat) ---
 app.get('/api/admin/penjualan', requireAuth(), async (c) => {
-  const { results } = await c.env.DB.prepare(`
+  const bulan = c.req.query('bulan') // opsional YYYY-MM
+  const base = `
     SELECT j.id, j.tanggal, j.nama_produk, j.jumlah, j.total, j.pembeli, j.status_bayar, j.jatuh_tempo, j.tanggal_lunas,
            u.nama AS pencatat, pl.nama AS pelanggan_nama, pl.tipe AS pelanggan_tipe
-    FROM penjualan j LEFT JOIN users u ON u.id = j.user_id LEFT JOIN pelanggan pl ON pl.id = j.pelanggan_id
-    ORDER BY j.tanggal DESC, j.id DESC LIMIT 100
-  `).all()
+    FROM penjualan j LEFT JOIN users u ON u.id = j.user_id LEFT JOIN pelanggan pl ON pl.id = j.pelanggan_id`
+  const q = bulan && /^\d{4}-\d{2}$/.test(bulan)
+    ? c.env.DB.prepare(base + " WHERE strftime('%Y-%m', j.tanggal) = ? ORDER BY j.tanggal DESC, j.id DESC").bind(bulan)
+    : c.env.DB.prepare(base + ' ORDER BY j.tanggal DESC, j.id DESC LIMIT 100')
+  const { results } = await q.all()
   return c.json({ penjualan: results })
 })
 
@@ -501,23 +695,60 @@ app.post('/api/admin/penjualan', requireAuth(), async (c) => {
     if (!pl) return c.json({ error: 'Pelanggan tidak ditemukan.' }, 404)
     namaPembeli = pl.nama
   }
-  await c.env.DB.prepare(
+  const res = await c.env.DB.prepare(
     'INSERT INTO penjualan (tanggal, produk_id, nama_produk, jumlah, total, pembeli, pelanggan_id, status_bayar, jatuh_tempo, tanggal_lunas, berat_kg, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(tanggal, produk_id, p.nama, jumlah, p.harga * jumlah, namaPembeli, pelanggan_id || null, bayar,
     bayar === 'tempo' ? jatuh_tempo : null, bayar === 'lunas' ? tanggal : null, (p.berat_kg || 0) * jumlah, c.get('user').id).run()
-  return c.json({ sukses: true })
+  const id = res.meta.last_row_id
+  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'penjualan', id, `${p.nama} x${jumlah} = Rp${p.harga * jumlah} (${bayar})`)
+  return c.json({ sukses: true, id })
 })
 
 // Tandai piutang lunas
 app.put('/api/admin/penjualan/:id/lunas', requireAuth(['owner', 'admin']), async (c) => {
+  const id = c.req.param('id')
   await c.env.DB.prepare("UPDATE penjualan SET status_bayar='lunas', tanggal_lunas=date('now') WHERE id = ? AND status_bayar='tempo'")
-    .bind(c.req.param('id')).run()
+    .bind(id).run()
+  await catatAudit(c.env.DB, c.get('user'), 'bayar', 'piutang', id, 'Ditandai lunas penuh')
   return c.json({ sukses: true })
 })
 
 app.delete('/api/admin/penjualan/:id', requireAuth(['owner', 'admin']), async (c) => {
-  await c.env.DB.prepare('DELETE FROM penjualan WHERE id = ?').bind(c.req.param('id')).run()
+  const id = c.req.param('id')
+  await c.env.DB.prepare('DELETE FROM penjualan WHERE id = ?').bind(id).run()
+  await c.env.DB.prepare('DELETE FROM pembayaran_piutang WHERE penjualan_id = ?').bind(id).run()
+  await catatAudit(c.env.DB, c.get('user'), 'hapus', 'penjualan', id)
   return c.json({ sukses: true })
+})
+
+// --- Cicilan piutang (pembayaran parsial) ---
+app.get('/api/admin/penjualan/:id/pembayaran', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT b.*, u.nama AS pencatat FROM pembayaran_piutang b LEFT JOIN users u ON u.id = b.user_id
+    WHERE b.penjualan_id = ? ORDER BY b.tanggal, b.id
+  `).bind(c.req.param('id')).all()
+  return c.json({ pembayaran: results })
+})
+
+app.post('/api/admin/penjualan/:id/pembayaran', requireAuth(['owner', 'admin']), async (c) => {
+  const id = c.req.param('id')
+  const { tanggal, jumlah, catatan } = await c.req.json()
+  const bayar = parseInt(jumlah)
+  if (!tanggal || !bayar || bayar <= 0) return c.json({ error: 'Tanggal dan jumlah pembayaran wajib diisi.' }, 400)
+  const j = await c.env.DB.prepare('SELECT id, total, status_bayar FROM penjualan WHERE id = ?').bind(id).first<any>()
+  if (!j) return c.json({ error: 'Penjualan tidak ditemukan.' }, 404)
+  if (j.status_bayar !== 'tempo') return c.json({ error: 'Penjualan ini sudah lunas.' }, 400)
+  const sudah = await c.env.DB.prepare('SELECT COALESCE(SUM(jumlah),0) v FROM pembayaran_piutang WHERE penjualan_id = ?').bind(id).first<any>()
+  const sisa = j.total - (sudah?.v ?? 0)
+  if (bayar > sisa) return c.json({ error: `Jumlah melebihi sisa piutang (sisa: Rp ${sisa.toLocaleString('id-ID')}).` }, 400)
+  await c.env.DB.prepare('INSERT INTO pembayaran_piutang (penjualan_id, tanggal, jumlah, catatan, user_id) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, tanggal, bayar, catatan || '', c.get('user').id).run()
+  const lunasSekarang = bayar >= sisa
+  if (lunasSekarang) {
+    await c.env.DB.prepare("UPDATE penjualan SET status_bayar='lunas', tanggal_lunas=? WHERE id = ?").bind(tanggal, id).run()
+  }
+  await catatAudit(c.env.DB, c.get('user'), 'bayar', 'piutang', id, `Cicilan Rp${bayar}${lunasSekarang ? ' (LUNAS)' : ` (sisa Rp${sisa - bayar})`}`)
+  return c.json({ sukses: true, lunas: lunasSekarang, sisa: sisa - bayar })
 })
 
 // --- Produk (owner & admin) ---
@@ -613,6 +844,7 @@ app.post('/api/admin/baglog', requireAuth(['owner', 'admin']), async (c) => {
     'INSERT INTO baglog_batch (kode, tanggal, jumlah, sumber, biaya_per_baglog, lokasi, tanggal_masuk_kumbung, status, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(kode, tanggal, jumlah, sumber || 'produksi sendiri', biaya_per_baglog || 0, lokasi || '',
     tanggal_masuk_kumbung || null, tanggal_masuk_kumbung ? 'produktif' : 'inkubasi', catatan || '', c.get('user').id).run()
+  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'baglog', kode, `${jumlah} baglog`)
   return c.json({ sukses: true, kode })
 })
 
@@ -694,6 +926,7 @@ app.get('/api/admin/piutang', requireAuth(), async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT j.id, j.tanggal, j.nama_produk, j.jumlah, j.total, j.jatuh_tempo, j.pembeli,
       pl.nama AS pelanggan_nama, pl.wa AS pelanggan_wa,
+      COALESCE((SELECT SUM(b.jumlah) FROM pembayaran_piutang b WHERE b.penjualan_id = j.id),0) AS terbayar,
       CASE WHEN j.jatuh_tempo < date('now') THEN 1 ELSE 0 END AS terlambat
     FROM penjualan j LEFT JOIN pelanggan pl ON pl.id = j.pelanggan_id
     WHERE j.status_bayar = 'tempo'
@@ -968,6 +1201,7 @@ app.post('/api/admin/pesanan/:id/selesai', requireAuth(), async (c) => {
   }
   stmts.push(c.env.DB.prepare("UPDATE pesanan SET status='selesai', penjualan_dibuat=1 WHERE id = ?").bind(ps.id))
   await c.env.DB.batch(stmts)
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'pesanan', ps.kode, `Selesai → ${items.length} penjualan otomatis (${bayar})`)
   return c.json({ sukses: true, jumlahPenjualan: items.length })
 })
 
@@ -979,7 +1213,7 @@ app.get('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
 
 app.put('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
   const body = await c.req.json<Record<string, string>>()
-  const kunciDiizinkan = ['wa_nomor', 'alamat', 'jam_operasional', 'instagram', 'facebook', 'tiktok']
+  const kunciDiizinkan = ['wa_nomor', 'alamat', 'jam_operasional', 'instagram', 'facebook', 'tiktok', 'target_kg_bulanan']
   const stmts = []
   for (const [key, value] of Object.entries(body)) {
     if (!kunciDiizinkan.includes(key)) continue
@@ -989,7 +1223,116 @@ app.put('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
     stmts.push(c.env.DB.prepare('INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(value)))
   }
   if (stmts.length) await c.env.DB.batch(stmts)
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'pengaturan', null, Object.keys(body).join(', '))
   return c.json({ sukses: true })
+})
+
+// ============ FASE 4: AUDIT LOG, EKSPOR CSV, NOTA ============
+
+// Log aktivitas (khusus owner)
+app.get('/api/admin/audit', requireAuth(['owner']), async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM audit_log ORDER BY id DESC LIMIT 200'
+  ).all()
+  return c.json({ audit: results })
+})
+
+// Helper CSV: escape nilai + BOM agar Excel baca UTF-8 dengan benar
+function keCSV(header: string[], rows: any[][]): string {
+  const esc = (v: any) => {
+    const s = String(v ?? '')
+    return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+  }
+  return '\uFEFF' + [header, ...rows].map((r) => r.map(esc).join(',')).join('\n')
+}
+
+function responCSV(c: any, nama: string, csv: string) {
+  return c.newResponse(csv, 200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${nama}"`
+  })
+}
+
+// Ekspor CSV: panen / penjualan / laporan bulanan (owner & admin)
+app.get('/api/admin/ekspor/:jenis', requireAuth(['owner', 'admin']), async (c) => {
+  const jenis = c.req.param('jenis')
+  const bulan = c.req.query('bulan') // opsional YYYY-MM
+  const filterBulan = bulan && /^\d{4}-\d{2}$/.test(bulan) ? bulan : null
+  const db = c.env.DB
+
+  if (jenis === 'panen') {
+    const q = filterBulan
+      ? db.prepare("SELECT p.tanggal, b.kode, p.grade_a, p.grade_b, p.grade_c, p.jumlah_kg, p.susut_kg, p.catatan, u.nama FROM panen p LEFT JOIN baglog_batch b ON b.id=p.batch_id LEFT JOIN users u ON u.id=p.user_id WHERE strftime('%Y-%m',p.tanggal)=? ORDER BY p.tanggal").bind(filterBulan)
+      : db.prepare('SELECT p.tanggal, b.kode, p.grade_a, p.grade_b, p.grade_c, p.jumlah_kg, p.susut_kg, p.catatan, u.nama FROM panen p LEFT JOIN baglog_batch b ON b.id=p.batch_id LEFT JOIN users u ON u.id=p.user_id ORDER BY p.tanggal')
+    const { results } = await q.all()
+    const csv = keCSV(
+      ['Tanggal', 'Batch', 'Grade A (kg)', 'Grade B (kg)', 'Grade C (kg)', 'Total (kg)', 'Susut (kg)', 'Catatan', 'Pencatat'],
+      (results as any[]).map((r) => [r.tanggal, r.kode, r.grade_a, r.grade_b, r.grade_c, r.jumlah_kg, r.susut_kg, r.catatan, r.nama])
+    )
+    return responCSV(c, `panen${filterBulan ? '-' + filterBulan : ''}.csv`, csv)
+  }
+
+  if (jenis === 'penjualan') {
+    const q = filterBulan
+      ? db.prepare("SELECT j.tanggal, j.nama_produk, j.jumlah, j.total, COALESCE(pl.nama, j.pembeli) pembeli, j.status_bayar, j.jatuh_tempo, j.tanggal_lunas, u.nama FROM penjualan j LEFT JOIN pelanggan pl ON pl.id=j.pelanggan_id LEFT JOIN users u ON u.id=j.user_id WHERE strftime('%Y-%m',j.tanggal)=? ORDER BY j.tanggal").bind(filterBulan)
+      : db.prepare('SELECT j.tanggal, j.nama_produk, j.jumlah, j.total, COALESCE(pl.nama, j.pembeli) pembeli, j.status_bayar, j.jatuh_tempo, j.tanggal_lunas, u.nama FROM penjualan j LEFT JOIN pelanggan pl ON pl.id=j.pelanggan_id LEFT JOIN users u ON u.id=j.user_id ORDER BY j.tanggal')
+    const { results } = await q.all()
+    const csv = keCSV(
+      ['Tanggal', 'Produk', 'Jumlah', 'Total (Rp)', 'Pembeli', 'Status Bayar', 'Jatuh Tempo', 'Tanggal Lunas', 'Pencatat'],
+      (results as any[]).map((r) => [r.tanggal, r.nama_produk, r.jumlah, r.total, r.pembeli, r.status_bayar, r.jatuh_tempo, r.tanggal_lunas, r.nama])
+    )
+    return responCSV(c, `penjualan${filterBulan ? '-' + filterBulan : ''}.csv`, csv)
+  }
+
+  if (jenis === 'keuangan') {
+    const bln = filterBulan || new Date().toISOString().slice(0, 7)
+    const [jual, lain, keluar] = await Promise.all([
+      db.prepare("SELECT COALESCE(SUM(total),0) v FROM penjualan WHERE strftime('%Y-%m',tanggal)=?").bind(bln).first<any>(),
+      db.prepare("SELECT COALESCE(SUM(jumlah),0) v FROM pemasukan_lain WHERE strftime('%Y-%m',tanggal)=?").bind(bln).first<any>(),
+      db.prepare("SELECT kategori, COALESCE(SUM(jumlah),0) v FROM pengeluaran WHERE strftime('%Y-%m',tanggal)=? GROUP BY kategori").bind(bln).all()
+    ])
+    const totalKeluar = (keluar.results as any[]).reduce((a, r) => a + r.v, 0)
+    const rows: any[][] = [
+      ['PEMASUKAN', ''],
+      ['Penjualan', jual?.v ?? 0],
+      ['Pemasukan lain', lain?.v ?? 0],
+      ['', ''],
+      ['PENGELUARAN', ''],
+      ...(keluar.results as any[]).map((r) => [r.kategori, r.v]),
+      ['', ''],
+      ['Total pemasukan', (jual?.v ?? 0) + (lain?.v ?? 0)],
+      ['Total pengeluaran', totalKeluar],
+      ['LABA / RUGI', (jual?.v ?? 0) + (lain?.v ?? 0) - totalKeluar]
+    ]
+    return responCSV(c, `laporan-keuangan-${bln}.csv`, keCSV([`Laporan ${bln}`, 'Jumlah (Rp)'], rows))
+  }
+
+  return c.json({ error: 'Jenis ekspor: panen / penjualan / keuangan' }, 400)
+})
+
+// Data nota (untuk halaman cetak) — penjualan atau pesanan
+app.get('/api/admin/nota/:jenis/:id', requireAuth(), async (c) => {
+  const { jenis, id } = c.req.param()
+  const cfg = await getPengaturan(c.env.DB)
+  if (jenis === 'penjualan') {
+    const j = await c.env.DB.prepare(`
+      SELECT j.*, COALESCE(pl.nama, j.pembeli) AS nama_pembeli, pl.alamat, pl.wa
+      FROM penjualan j LEFT JOIN pelanggan pl ON pl.id = j.pelanggan_id WHERE j.id = ?
+    `).bind(id).first<any>()
+    if (!j) return c.json({ error: 'Tidak ditemukan' }, 404)
+    return c.json({ nota: { kode: 'JL-' + String(j.id).padStart(5, '0'), tanggal: j.tanggal, pembeli: j.nama_pembeli, alamat: j.alamat || '', status_bayar: j.status_bayar, jatuh_tempo: j.jatuh_tempo, item: [{ nama: j.nama_produk, jumlah: j.jumlah, harga: Math.round(j.total / j.jumlah), subtotal: j.total }], total: j.total }, cfg })
+  }
+  if (jenis === 'pesanan') {
+    const ps = await c.env.DB.prepare(`
+      SELECT ps.*, pl.nama AS nama_pembeli, pl.alamat, pl.wa
+      FROM pesanan ps LEFT JOIN pelanggan pl ON pl.id = ps.pelanggan_id WHERE ps.id = ?
+    `).bind(id).first<any>()
+    if (!ps) return c.json({ error: 'Tidak ditemukan' }, 404)
+    const { results: items } = await c.env.DB.prepare('SELECT nama_produk nama, jumlah, harga, subtotal FROM pesanan_item WHERE pesanan_id = ?').bind(id).all()
+    const total = (items as any[]).reduce((a, b) => a + b.subtotal, 0)
+    return c.json({ nota: { kode: ps.kode, tanggal: ps.tanggal_pesan, tanggal_kirim: ps.tanggal_kirim, pembeli: ps.nama_pembeli, alamat: ps.alamat || '', status: ps.status, item: items, total }, cfg })
+  }
+  return c.json({ error: 'Jenis: penjualan / pesanan' }, 400)
 })
 
 export default app

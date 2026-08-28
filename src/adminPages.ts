@@ -5,6 +5,9 @@ const head = (title: string) => `
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
   <link rel="icon" type="image/png" href="/static/logo-hiratake.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2B2B2B">
+  <link rel="apple-touch-icon" href="/static/logo-hiratake.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -108,11 +111,16 @@ export const adminPage = () => `<!DOCTYPE html>
           </div>
         </a>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 sm:gap-3">
+        <button id="notif-btn" class="relative w-10 h-10 rounded-lg hover:bg-white/10 transition" title="Notifikasi" aria-label="Notifikasi">
+          <i class="fas fa-bell"></i>
+          <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-vermillion text-[10px] font-bold flex items-center justify-center">0</span>
+        </button>
         <div class="text-right">
           <p id="user-nama" class="text-sm font-semibold"></p>
           <p id="user-role" class="text-[11px] text-kin uppercase tracking-wider"></p>
         </div>
+        <button data-modal="modal-sandi" class="w-10 h-10 rounded-lg hover:bg-white/10 transition" title="Ganti kata sandi" aria-label="Ganti kata sandi"><i class="fas fa-key"></i></button>
         <button id="logout-btn" class="bg-vermillion hover:bg-red-700 px-4 py-2 rounded-full text-sm transition" title="Keluar">
           <i class="fas fa-right-from-bracket sm:mr-1"></i><span class="hidden sm:inline">Keluar</span>
         </button>
@@ -123,6 +131,50 @@ export const adminPage = () => `<!DOCTYPE html>
   <!-- Overlay gelap saat sidebar terbuka di HP -->
   <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
 
+  <!-- Panel notifikasi -->
+  <div id="notif-panel" class="hidden fixed top-16 right-3 sm:right-6 w-[calc(100vw-1.5rem)] max-w-sm bg-white text-sumi rounded-2xl shadow-2xl z-50 overflow-hidden">
+    <div class="px-4 py-3 bg-sumi text-washi flex items-center justify-between">
+      <p class="font-serifjp font-semibold text-sm"><i class="fas fa-bell mr-2 text-kin"></i>Notifikasi</p>
+      <button id="notif-tutup" class="text-washi/60 hover:text-washi" aria-label="Tutup"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="notif-isi" class="max-h-80 overflow-y-auto divide-y divide-gray-100"></div>
+  </div>
+
+  <!-- Modal ganti kata sandi sendiri -->
+  <div id="modal-sandi" class="modal hidden">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close="modal-sandi" aria-label="Tutup"><i class="fas fa-times"></i></button>
+      <form id="form-sandi" class="space-y-3">
+        <h2 class="font-serifjp font-semibold"><i class="fas fa-key text-vermillion mr-2"></i>Ganti Kata Sandi</h2>
+        <p class="text-xs text-sumi/50 bg-washi rounded-lg p-2.5">Setelah berhasil, semua perangkat lain otomatis keluar (logout) demi keamanan.</p>
+        <div><label class="block text-sm mb-1" for="sandi-lama">Kata Sandi Lama</label><input id="sandi-lama" type="password" required class="form-input" autocomplete="current-password"></div>
+        <div><label class="block text-sm mb-1" for="sandi-baru">Kata Sandi Baru</label><input id="sandi-baru" type="password" required minlength="6" class="form-input" autocomplete="new-password"></div>
+        <div><label class="block text-sm mb-1" for="sandi-ulang">Ulangi Sandi Baru</label><input id="sandi-ulang" type="password" required minlength="6" class="form-input" autocomplete="new-password"></div>
+        <button class="w-full bg-vermillion hover:bg-red-700 text-white py-2.5 rounded-full font-medium transition">Simpan Sandi Baru</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal cicilan piutang -->
+  <div id="modal-cicil" class="modal hidden">
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close="modal-cicil" aria-label="Tutup"><i class="fas fa-times"></i></button>
+      <form id="form-cicil" class="space-y-3">
+        <h2 class="font-serifjp font-semibold"><i class="fas fa-hand-holding-dollar text-kin mr-2"></i>Pembayaran Piutang</h2>
+        <input type="hidden" id="cicil-penjualan-id">
+        <div class="bg-washi rounded-lg p-3 text-sm space-y-0.5">
+          <p id="cicil-info-pembeli" class="font-semibold"></p>
+          <p>Total: <span id="cicil-info-total" class="font-semibold"></span> · Sisa: <span id="cicil-info-sisa" class="font-semibold text-vermillion"></span></p>
+        </div>
+        <div id="cicil-riwayat" class="text-xs text-sumi/60 space-y-1"></div>
+        <div><label class="block text-sm mb-1" for="cicil-tanggal">Tanggal Bayar</label><input id="cicil-tanggal" type="date" required class="form-input"></div>
+        <div><label class="block text-sm mb-1" for="cicil-jumlah">Jumlah (Rp)</label><input id="cicil-jumlah" type="number" min="1" required class="form-input" placeholder="boleh sebagian (cicilan)"></div>
+        <div><label class="block text-sm mb-1" for="cicil-catatan">Catatan</label><input id="cicil-catatan" type="text" class="form-input" placeholder="opsional"></div>
+        <button class="w-full bg-kin hover:bg-yellow-700 text-white py-2.5 rounded-full font-medium transition">Catat Pembayaran</button>
+      </form>
+    </div>
+  </div>
+
   <!-- Sidebar navigasi -->
   <aside id="sidebar" class="sidebar bg-sumi text-washi" aria-label="Navigasi utama">
     <nav id="tab-nav" class="flex flex-col gap-1 p-3">
@@ -131,10 +183,10 @@ export const adminPage = () => `<!DOCTYPE html>
       <button data-tab="baglog" class="tab-btn"><i class="fas fa-cubes"></i>Baglog</button>
       <button data-tab="panen" class="tab-btn"><i class="fas fa-wheat-awn"></i>Panen</button>
       <button data-tab="penjualan" class="tab-btn"><i class="fas fa-cash-register"></i>Penjualan</button>
-      <button data-tab="pesanan" class="tab-btn"><i class="fas fa-clipboard-list"></i>Pesanan</button>
+      <button data-tab="pesanan" class="tab-btn"><i class="fas fa-clipboard-list"></i>Pesanan<span id="badge-pesanan" class="nav-badge nav-badge-kin hidden">0</span></button>
       <button data-tab="stok" class="tab-btn"><i class="fas fa-boxes-stacked"></i>Stok</button>
       <p class="sidebar-group">Pelanggan & Tagihan</p>
-      <button data-tab="piutang" class="tab-btn"><i class="fas fa-file-invoice-dollar"></i>Piutang</button>
+      <button data-tab="piutang" class="tab-btn"><i class="fas fa-file-invoice-dollar"></i>Piutang<span id="badge-piutang" class="nav-badge hidden">0</span></button>
       <button data-tab="pelanggan" class="tab-btn"><i class="fas fa-address-book"></i>Pelanggan</button>
       <p class="sidebar-group hidden" data-roles="owner,admin">Keuangan</p>
       <button data-tab="keuangan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-wallet"></i>Keuangan</button>
@@ -142,6 +194,7 @@ export const adminPage = () => `<!DOCTYPE html>
       <p class="sidebar-group hidden" data-roles="owner,admin">Pengelolaan</p>
       <button data-tab="produk" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-box"></i>Produk</button>
       <button data-tab="pengguna" class="tab-btn hidden" data-roles="owner"><i class="fas fa-users"></i>Pengguna</button>
+      <button data-tab="aktivitas" class="tab-btn hidden" data-roles="owner"><i class="fas fa-clock-rotate-left"></i>Aktivitas</button>
       <button data-tab="pengaturan" class="tab-btn hidden" data-roles="owner,admin"><i class="fas fa-gear"></i>Website</button>
     </nav>
   </aside>
@@ -149,6 +202,14 @@ export const adminPage = () => `<!DOCTYPE html>
   <main id="main-content" class="main-content px-4 py-6">
     <!-- Tab: Ringkasan -->
     <section id="tab-dashboard" class="tab-panel">
+      <div id="peringatan-dashboard" class="space-y-2 mb-4"></div>
+      <div id="target-wrap" class="hidden bg-white rounded-2xl shadow p-5 mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h2 class="font-serifjp font-semibold text-sm"><i class="fas fa-bullseye text-vermillion mr-2"></i>Target Panen Bulan Ini</h2>
+          <p class="text-sm"><span id="target-tercapai" class="font-bold text-matcha">0</span> / <span id="target-angka">0</span> kg (<span id="target-persen">0</span>%)</p>
+        </div>
+        <div class="h-3 bg-washi rounded-full overflow-hidden"><div id="target-bar" class="h-full bg-matcha rounded-full transition-all" style="width:0%"></div></div>
+      </div>
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="stat-cards"></div>
       <div class="grid lg:grid-cols-2 gap-6">
         <section class="bg-white rounded-2xl shadow p-5">
@@ -250,7 +311,14 @@ export const adminPage = () => `<!DOCTYPE html>
         </div>
       </div>
       <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
-        <h2 class="font-serifjp font-semibold mb-3">Riwayat Panen</h2>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 class="font-serifjp font-semibold">Riwayat Panen</h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="month" id="panen-filter-bulan" class="form-input !w-auto !py-1.5 text-sm" title="Filter bulan">
+            <input type="search" id="panen-cari" class="form-input !w-36 !py-1.5 text-sm" placeholder="Cari...">
+            <button id="ekspor-panen" class="hidden text-sm border border-matcha text-matcha hover:bg-matcha hover:text-white px-3 py-1.5 rounded-full transition" data-roles="owner,admin"><i class="fas fa-file-csv mr-1"></i>CSV</button>
+          </div>
+        </div>
         <table class="w-full text-sm data-table" id="table-panen"></table>
       </div>
     </section>
@@ -284,7 +352,14 @@ export const adminPage = () => `<!DOCTYPE html>
         </div>
       </div>
       <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
-        <h2 class="font-serifjp font-semibold mb-3">Riwayat Penjualan</h2>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 class="font-serifjp font-semibold">Riwayat Penjualan</h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="month" id="jual-filter-bulan" class="form-input !w-auto !py-1.5 text-sm" title="Filter bulan">
+            <input type="search" id="jual-cari" class="form-input !w-36 !py-1.5 text-sm" placeholder="Cari pembeli...">
+            <button id="ekspor-penjualan" class="hidden text-sm border border-kin text-kin hover:bg-kin hover:text-white px-3 py-1.5 rounded-full transition" data-roles="owner,admin"><i class="fas fa-file-csv mr-1"></i>CSV</button>
+          </div>
+        </div>
         <table class="w-full text-sm data-table" id="table-penjualan"></table>
       </div>
     </section>
@@ -434,10 +509,11 @@ export const adminPage = () => `<!DOCTYPE html>
     <!-- Tab: Piutang -->
     <section id="tab-piutang" class="tab-panel hidden">
       <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 class="font-serifjp font-semibold"><i class="fas fa-file-invoice-dollar text-kin mr-2"></i>Piutang Berjalan</h2>
-          <p class="text-sm">Total: <strong id="piutang-total" class="text-vermillion">Rp 0</strong></p>
+          <p class="text-sm">Sisa tertagih: <strong id="piutang-total" class="text-vermillion">Rp 0</strong></p>
         </div>
+        <p class="text-xs text-sumi/50 mb-3"><i class="fas fa-circle-info mr-1"></i>Klik <i class="fas fa-hand-holding-dollar text-kin"></i> untuk catat pembayaran (boleh dicicil sebagian) — piutang otomatis lunas saat sisa Rp 0.</p>
         <table class="w-full text-sm data-table" id="table-piutang"></table>
       </div>
     </section>
@@ -548,6 +624,7 @@ export const adminPage = () => `<!DOCTYPE html>
         <label for="laporan-bulan" class="text-sm font-medium">Bulan:</label>
         <input id="laporan-bulan" type="month" class="form-input" style="max-width:200px">
         <button id="laporan-muat" class="bg-sumi text-washi px-5 py-2 rounded-full text-sm hover:bg-black transition"><i class="fas fa-rotate mr-1"></i>Muat</button>
+        <button id="ekspor-keuangan" class="border border-sumi/30 text-sumi hover:bg-sumi hover:text-washi px-5 py-2 rounded-full text-sm transition"><i class="fas fa-file-csv mr-1"></i>Unduh CSV</button>
       </div>
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="laporan-cards"></div>
       <div class="grid lg:grid-cols-2 gap-6">
@@ -575,8 +652,18 @@ export const adminPage = () => `<!DOCTYPE html>
           <div><label class="block text-sm mb-1 font-medium" for="cfg-wa">Nomor WhatsApp Usaha</label><input id="cfg-wa" type="text" placeholder="6281234567890" class="form-input"><p class="text-xs text-sumi/40 mt-1">Format: kode negara tanpa + dan tanpa spasi, contoh 6281234567890</p></div>
           <div><label class="block text-sm mb-1 font-medium" for="cfg-alamat">Alamat Kumbung</label><input id="cfg-alamat" type="text" class="form-input"></div>
           <div><label class="block text-sm mb-1 font-medium" for="cfg-jam">Jam Operasional</label><input id="cfg-jam" type="text" class="form-input"></div>
+          <div><label class="block text-sm mb-1 font-medium" for="cfg-target">Target Panen Bulanan (kg)</label><input id="cfg-target" type="number" min="0" step="1" class="form-input" placeholder="0 = tanpa target"><p class="text-xs text-sumi/40 mt-1">Jika diisi, dashboard Ringkasan menampilkan progres panen bulan ini terhadap target.</p></div>
           <button class="bg-vermillion hover:bg-red-700 text-white px-8 py-2.5 rounded-full font-medium transition">Simpan & Terapkan ke Website</button>
         </form>
+      </div>
+    </section>
+
+    <!-- Tab: Aktivitas / Audit Log (owner) -->
+    <section id="tab-aktivitas" class="tab-panel hidden">
+      <div class="bg-white rounded-2xl shadow p-5 overflow-x-auto">
+        <h2 class="font-serifjp font-semibold mb-1"><i class="fas fa-clock-rotate-left text-vermillion mr-2"></i>Log Aktivitas</h2>
+        <p class="text-xs text-sumi/50 mb-3">200 aktivitas terakhir: siapa melakukan apa & kapan. Untuk penelusuran jika ada data janggal.</p>
+        <table class="w-full text-sm data-table" id="table-audit"></table>
       </div>
     </section>
 

@@ -23,6 +23,7 @@
 - ✅ Statistik hero (baglog aktif, rata-rata kg/hari 30 hari, pelanggan aktif) **dihitung real-time dari data asli**
 - ✅ Nomor WA, alamat, jam operasional **diatur dari dashboard tab "Web"** — semua tombol pesan otomatis ikut berubah
 - ✅ Katalog produk dari D1, pemesanan via WhatsApp
+- ✅ **Form pesanan online publik** → langsung tercatat sebagai PO di sistem (sumber `web`) + auto-daftar pelanggan by WA + buka WhatsApp dengan kode pesanan; anti-spam maks 3 pesanan/WA/hari, validasi nomor WA, harga diambil dari DB
 
 ### Dashboard Pengelolaan
 - ✅ **Ringkasan**: 8 kartu metrik (panen, penjualan, baglog aktif, % kontaminasi, produktivitas kg/baglog, piutang) + grafik 7 hari
@@ -36,6 +37,19 @@
 - ✅ **Laporan** (owner/admin): pilih bulan → laba/rugi otomatis, HPP per kg, kas masuk vs omzet (akrual vs kas), susut %, kontaminasi, grafik komposisi pengeluaran (doughnut), tabel rinci, dan **insight otomatis** (margin per kg, peringatan susut >5%, piutang >30% omzet)
 - ✅ **Pesanan/PO**: kode otomatis PO-YYYY-MM-XXX, multi-item, alur status baru→diproses→siap→selesai/batal, penanda terlambat kirim, kabari pelanggan via WA, **selesai otomatis tercatat sebagai penjualan** (anti-dobel & anti-miss)
 - ✅ **Stok & Rekonsiliasi**: saldo stok harian (panen − terjual kg ± penyesuaian), deteksi **saldo minus = jamur "hilang"** (baris merah + peringatan), penyesuaian stok (rusak/bonus/sampel/konsumsi/koreksi), produk punya berat/unit untuk konversi ke kg
+
+### Fase 4 — Keamanan, Notifikasi & Kemudahan (BARU)
+- ✅ **Ganti kata sandi sendiri** (semua peran, modal 🔑 di header) — verifikasi sandi lama, min 6 karakter, otomatis logout dari perangkat lain
+- ✅ **Rate-limit login**: maks 5 percobaan gagal per username per 5 menit (tabel `login_attempts`), sesi kedaluwarsa dibersihkan otomatis
+- ✅ **Notifikasi lonceng 🔔** + badge sidebar + peringatan dashboard: piutang terlambat, piutang jatuh tempo ≤3 hari, pesanan web baru, **prediksi baglog tua** (batch produktif >100 hari)
+- ✅ **Cicilan piutang**: bayar sebagian (tabel `pembayaran_piutang`), kolom terbayar/sisa, riwayat cicilan, guard anti-lebih-bayar, otomatis LUNAS saat sisa = 0
+- ✅ **Filter bulan + pencarian** di tabel Panen & Penjualan (debounced)
+- ✅ **Ekspor CSV** (owner/admin): panen, penjualan, keuangan — kompatibel Excel (BOM UTF-8)
+- ✅ **Audit trail**: semua aksi penting (tambah/ubah/hapus/login/bayar) tercatat di `audit_log`, tab **Aktivitas** khusus owner
+- ✅ **Nota cetak/PDF**: halaman print `/nota/penjualan/:id` & `/nota/pesanan/:id` (window.print → simpan PDF)
+- ✅ **Target produksi bulanan**: diatur di Pengaturan, progress bar berwarna di dashboard (merah <60%, emas <100%, hijau ≥100%)
+- ✅ **PWA manifest** + theme-color — bisa "Add to Home Screen" di HP
+- ✅ **Template WA diperkaya**: pesan tagihan mencantumkan sisa piutang, pesan pesanan mencantumkan kode/total/status/tanggal kirim
 
 ## Aturan Anti-Miss yang Ditanam di Sistem
 1. Kejadian baglog tidak boleh melebihi sisa baglog batch
@@ -86,6 +100,20 @@
 | `/api/admin/pesanan/:id/status` | PUT | semua | baru/diproses/siap/batal |
 | `/api/admin/pesanan/:id/selesai` | POST | semua | Selesai + auto-catat penjualan (lunas/tempo) |
 
+## Entri Fungsional Baru (Fase 4)
+| Path | Metode | Peran | Deskripsi |
+|------|--------|-------|-----------|
+| `/api/pesan-online` | POST | publik | Pesanan online dari landing (anti-spam, auto-daftar pelanggan) |
+| `/api/auth/password` | PUT | semua (login) | Ganti kata sandi sendiri |
+| `/api/admin/notifikasi` | GET | semua | Piutang telat/dekat, pesanan web baru, batch tua |
+| `/api/admin/penjualan/:id/pembayaran` | GET | semua | Riwayat cicilan piutang |
+| `/api/admin/penjualan/:id/pembayaran` | POST | owner, admin | Catat cicilan (auto-lunas saat sisa 0) |
+| `/api/admin/panen?bulan=` `/api/admin/penjualan?bulan=` | GET | semua | Filter per bulan |
+| `/api/admin/ekspor/:jenis` | GET | owner, admin | CSV: panen / penjualan / keuangan |
+| `/api/admin/audit` | GET | owner | 200 aktivitas terakhir |
+| `/api/admin/nota/:jenis/:id` | GET | semua | Data nota (penjualan/pesanan) |
+| `/nota/:jenis/:id` | GET | semua (login) | Halaman nota siap cetak/PDF |
+
 ### Rumus Laporan
 - **Omzet** = total penjualan bulan itu (basis akrual, termasuk tempo)
 - **Kas masuk** = penjualan lunas + tempo yang dilunasi bulan itu (basis kas)
@@ -94,12 +122,17 @@
 
 ## Arsitektur Data
 - **Penyimpanan**: Cloudflare D1 (SQLite)
-- **Tabel**: `users`, `sessions`, `produk` (+berat_kg), `panen` (+grade/susut/batch), `penjualan` (+pelanggan/status_bayar/jatuh_tempo/berat_kg), `baglog_batch`, `baglog_kejadian`, `pelanggan`, `pengaturan`, `pengeluaran`, `pemasukan_lain`, `stok_penyesuaian`, `pesanan`, `pesanan_item`
-- **Migrasi**: `migrations/0001_initial_schema.sql` … `migrations/0004_fase3_stok_pesanan.sql`
+- **Tabel**: `users`, `sessions`, `produk` (+berat_kg), `panen` (+grade/susut/batch), `penjualan` (+pelanggan/status_bayar/jatuh_tempo/berat_kg), `baglog_batch`, `baglog_kejadian`, `pelanggan`, `pengaturan`, `pengeluaran`, `pemasukan_lain`, `stok_penyesuaian`, `pesanan` (+sumber web/admin), `pesanan_item`, `pembayaran_piutang`, `login_attempts`, `audit_log`
+- **Migrasi**: `migrations/0001_initial_schema.sql` … `migrations/0005_fitur_lanjutan.sql`
 
 ## Belum Diimplementasikan (Fase Berikutnya)
-- ❌ Fase 4: kondisi kumbung, absensi & kasbon, aset
-- ❌ Deploy produksi ke Cloudflare Pages
+- ❌ Deploy produksi ke Cloudflare Pages (menunggu pilihan: hosted Genspark vs akun Cloudflare sendiri)
+- ❌ Grafik tren antar-bulan di Laporan
+- ❌ Pagination tabel (saat ini limit + filter bulan sudah memadai untuk volume kecil)
+- ❌ Tailwind build lokal (masih CDN)
+- ❌ Galeri foto kumbung asli (butuh foto dari pemilik)
+- ❌ Backup data otomatis terjadwal
+- ❌ Modul lanjutan: kondisi kumbung, absensi & kasbon, aset
 
 ## Panduan Alur Harian
 1. **Ada baglog baru** → Admin buat batch di tab Baglog
@@ -112,7 +145,13 @@
 8. **Cek piutang** → tab Piutang: tagih yang mendekati/lewat jatuh tempo via tombol WA
 9. **Setiap ada pengeluaran** (beli serbuk, bibit, gas, gaji, dll) → tab Keuangan → catat dengan kategori
 10. **Akhir bulan** → tab Laporan → pilih bulan → lihat laba/rugi, HPP/kg, dan insight otomatis
-11. **Ganti info web** (WA/alamat/jam) → tab Web → simpan → langsung aktif
+11. **Ganti info web** (WA/alamat/jam) & **target produksi bulanan** → tab Web → simpan → langsung aktif
+12. **Pesanan online masuk dari website** → muncul badge di sidebar Pesanan + notifikasi 🔔 → proses seperti PO biasa
+13. **Pelanggan bayar cicilan** → tab Piutang → tombol Cicil → catat jumlah → otomatis LUNAS saat sisa nol
+14. **Butuh nota** → tombol 🖨 Nota di baris penjualan/pesanan → cetak atau simpan PDF
+15. **Akhir bulan arsip** → tombol Ekspor CSV di tab Panen/Penjualan/Laporan
+16. **Owner cek aktivitas tim** → tab Aktivitas (siapa mencatat/mengubah/menghapus apa & kapan)
+17. **Ganti kata sandi** → ikon 🔑 di header (wajib segera setelah pertama kali login!)
 
 ## Deployment
 - **Platform**: Cloudflare Pages + D1 (dev: wrangler --local + PM2)
@@ -121,4 +160,5 @@
 - **Responsive**: mobile-first, sidebar drawer di HP, tabel scroll horizontal, input anti-zoom iOS
 - **UI Form**: semua form tambah/edit berupa modal popup (bottom-sheet di HP, tutup via ✕ / klik luar / Esc)
 - **Data**: 100% asli dari input pengguna — seed hanya berisi akun default & katalog produk, tanpa data transaksi contoh; statistik landing selalu sinkron dengan database
-- **Terakhir Diperbarui**: 2026-08-28 (Modal + pembersihan data mock)
+- **Keamanan**: password hash (salt+SHA-256), sesi 7 hari + pembersihan otomatis, rate-limit login, audit trail, role-gating semua endpoint, PWA-ready
+- **Terakhir Diperbarui**: 2026-08-28 (Fase 4: notifikasi, cicilan piutang, pesanan online publik, ekspor CSV, audit trail, nota cetak, target produksi, ganti sandi, rate-limit, PWA)

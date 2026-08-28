@@ -48,6 +48,22 @@ export async function getSessionUser(c: Context<{ Bindings: Bindings }>): Promis
   return row ?? null
 }
 
+// Catat aktivitas ke audit log (tidak boleh menggagalkan operasi utama)
+export async function catatAudit(
+  db: D1Database,
+  user: { id?: number; nama?: string } | null,
+  aksi: string,
+  entitas: string,
+  entitasId?: string | number | null,
+  detail?: string
+): Promise<void> {
+  try {
+    await db.prepare(
+      'INSERT INTO audit_log (user_id, nama, aksi, entitas, entitas_id, detail) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(user?.id ?? null, user?.nama ?? '-', aksi, entitas, String(entitasId ?? ''), detail || '').run()
+  } catch { /* audit tidak boleh mengganggu operasi utama */ }
+}
+
 // Middleware: wajib login
 export function requireAuth(roles?: Array<'owner' | 'admin' | 'karyawan'>) {
   return async (c: Context<{ Bindings: Bindings; Variables: { user: SessionUser } }>, next: Next) => {
