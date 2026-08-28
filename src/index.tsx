@@ -1,6 +1,12 @@
 import { Hono } from 'hono'
+import { setCookie, deleteCookie, getCookie } from 'hono/cookie'
+import { loginPage, adminPage } from './adminPages'
+import {
+  type Bindings, type SessionUser,
+  verifyPassword, hashPassword, generateToken, getSessionUser, requireAuth
+} from './auth'
 
-const app = new Hono()
+const app = new Hono<{ Bindings: Bindings; Variables: { user: SessionUser } }>()
 
 app.get('/', (c) => {
   return c.html(`<!DOCTYPE html>
@@ -288,7 +294,7 @@ app.get('/', (c) => {
         </div>
       </div>
     </div>
-    <p class="text-center text-xs mt-8 text-washi/40">© 2026 Hiratake — Jamur Tiram Segar. いただきます！</p>
+    <p class="text-center text-xs mt-8 text-washi/40">© 2026 Hiratake — Jamur Tiram Segar. いただきます！ · <a href="/login" class="hover:text-vermillion underline underline-offset-2"><i class="fas fa-lock mr-1"></i>Login Pengelola</a></p>
   </footer>
 
   <!-- Tombol WhatsApp mengambang -->
@@ -303,18 +309,202 @@ app.get('/', (c) => {
 </html>`)
 })
 
-// API: daftar produk
-app.get('/api/produk', (c) => {
-  return c.json({
-    produk: [
-      { id: 1, nama: 'Jamur Tiram Segar 250g', jp: '新鮮ヒラタケ', harga: 8000, satuan: 'pack', deskripsi: 'Kemasan praktis untuk masakan rumahan sehari-hari.', ikon: 'fa-seedling', badge: 'Terlaris' },
-      { id: 2, nama: 'Jamur Tiram Segar 500g', jp: '新鮮ヒラタケ', harga: 15000, satuan: 'pack', deskripsi: 'Ukuran keluarga, cocok untuk tumisan dan sup.', ikon: 'fa-basket-shopping', badge: null },
-      { id: 3, nama: 'Jamur Tiram Segar 1kg', jp: '新鮮ヒラタケ', harga: 28000, satuan: 'kg', deskripsi: 'Hemat untuk warung makan dan katering.', ikon: 'fa-box', badge: 'Hemat' },
-      { id: 4, nama: 'Jamur Crispy 100g', jp: 'カリカリきのこ', harga: 12000, satuan: 'pouch', deskripsi: 'Camilan jamur tiram goreng krispi gurih renyah.', ikon: 'fa-cookie-bite', badge: 'Baru' },
-      { id: 5, nama: 'Baglog Siap Panen', jp: '菌床ブロック', harga: 20000, satuan: 'baglog', deskripsi: 'Media tanam siap panen, cocok untuk edukasi & hobi.', ikon: 'fa-cubes', badge: null },
-      { id: 6, nama: 'Paket Grosir 10kg+', jp: '卸売パック', harga: 250000, satuan: 'paket', deskripsi: 'Harga khusus mitra restoran & reseller, pasokan rutin.', ikon: 'fa-handshake', badge: 'Mitra' }
-    ]
+// ============ HALAMAN LOGIN & ADMIN ============
+
+app.get('/login', async (c) => {
+  const user = await getSessionUser(c)
+  if (user) return c.redirect('/admin')
+  return c.html(loginPage())
+})
+
+app.get('/admin', async (c) => {
+  const user = await getSessionUser(c)
+  if (!user) return c.redirect('/login')
+  return c.html(adminPage())
+})
+
+// ============ API AUTENTIKASI ============
+
+app.post('/api/auth/login', async (c) => {
+  const { username, password } = await c.req.json<{ username: string; password: string }>()
+  if (!username || !password) return c.json({ error: 'Username dan kata sandi wajib diisi.' }, 400)
+
+  const user = await c.env.DB.prepare(
+    'SELECT id, username, password_hash, nama, role, aktif FROM users WHERE username = ?'
+  ).bind(username.toLowerCase()).first<any>()
+
+  if (!user || !user.aktif || !(await verifyPassword(password, user.password_hash))) {
+    return c.json({ error: 'Username atau kata sandi salah.' }, 401)
+  }
+
+  const token = generateToken()
+  await c.env.DB.prepare(
+    "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))"
+  ).bind(token, user.id).run()
+
+  setCookie(c, 'hiratake_session', token, {
+    httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 24 * 7
   })
+  return c.json({ sukses: true, user: { id: user.id, username: user.username, nama: user.nama, role: user.role } })
+})
+
+app.post('/api/auth/logout', async (c) => {
+  const token = getCookie(c, 'hiratake_session')
+  if (token) await c.env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run()
+  deleteCookie(c, 'hiratake_session', { path: '/' })
+  return c.json({ sukses: true })
+})
+
+app.get('/api/auth/me', async (c) => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: 'Belum login' }, 401)
+  return c.json({ user })
+})
+
+// ============ API PUBLIK ============
+
+// Daftar produk aktif (dipakai halaman depan)
+app.get('/api/produk', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, nama, jp, harga, satuan, deskripsi, ikon, badge FROM produk WHERE aktif = 1 ORDER BY id'
+  ).all()
+  return c.json({ produk: results })
+})
+
+// ============ API PENGELOLAAN (WAJIB LOGIN) ============
+
+// --- Ringkasan dashboard (semua role) ---
+app.get('/api/admin/ringkasan', requireAuth(), async (c) => {
+  const db = c.env.DB
+  const [panenHariIni, panenBulanIni, jualHariIni, jualBulanIni, panen7, jual7, totalProduk] = await Promise.all([
+    db.prepare("SELECT COALESCE(SUM(jumlah_kg),0) v FROM panen WHERE tanggal = date('now')").first<any>(),
+    db.prepare("SELECT COALESCE(SUM(jumlah_kg),0) v FROM panen WHERE strftime('%Y-%m',tanggal) = strftime('%Y-%m','now')").first<any>(),
+    db.prepare("SELECT COALESCE(SUM(total),0) v FROM penjualan WHERE tanggal = date('now')").first<any>(),
+    db.prepare("SELECT COALESCE(SUM(total),0) v FROM penjualan WHERE strftime('%Y-%m',tanggal) = strftime('%Y-%m','now')").first<any>(),
+    db.prepare("SELECT tanggal, SUM(jumlah_kg) v FROM panen WHERE tanggal >= date('now','-6 days') GROUP BY tanggal ORDER BY tanggal").all(),
+    db.prepare("SELECT tanggal, SUM(total) v FROM penjualan WHERE tanggal >= date('now','-6 days') GROUP BY tanggal ORDER BY tanggal").all(),
+    db.prepare('SELECT COUNT(*) v FROM produk WHERE aktif = 1').first<any>()
+  ])
+  return c.json({
+    panenHariIni: panenHariIni.v, panenBulanIni: panenBulanIni.v,
+    jualHariIni: jualHariIni.v, jualBulanIni: jualBulanIni.v,
+    grafikPanen: panen7.results, grafikPenjualan: jual7.results,
+    totalProduk: totalProduk.v
+  })
+})
+
+// --- Panen (semua role bisa catat & lihat) ---
+app.get('/api/admin/panen', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT p.id, p.tanggal, p.jumlah_kg, p.catatan, u.nama AS pencatat
+    FROM panen p LEFT JOIN users u ON u.id = p.user_id
+    ORDER BY p.tanggal DESC, p.id DESC LIMIT 100
+  `).all()
+  return c.json({ panen: results })
+})
+
+app.post('/api/admin/panen', requireAuth(), async (c) => {
+  const { tanggal, jumlah_kg, catatan } = await c.req.json()
+  if (!tanggal || !jumlah_kg || jumlah_kg <= 0) return c.json({ error: 'Tanggal dan jumlah kg wajib diisi.' }, 400)
+  await c.env.DB.prepare('INSERT INTO panen (tanggal, jumlah_kg, catatan, user_id) VALUES (?, ?, ?, ?)')
+    .bind(tanggal, jumlah_kg, catatan || '', c.get('user').id).run()
+  return c.json({ sukses: true })
+})
+
+app.delete('/api/admin/panen/:id', requireAuth(['owner', 'admin']), async (c) => {
+  await c.env.DB.prepare('DELETE FROM panen WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// --- Penjualan (semua role bisa catat & lihat) ---
+app.get('/api/admin/penjualan', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT j.id, j.tanggal, j.nama_produk, j.jumlah, j.total, j.pembeli, u.nama AS pencatat
+    FROM penjualan j LEFT JOIN users u ON u.id = j.user_id
+    ORDER BY j.tanggal DESC, j.id DESC LIMIT 100
+  `).all()
+  return c.json({ penjualan: results })
+})
+
+app.post('/api/admin/penjualan', requireAuth(), async (c) => {
+  const { tanggal, produk_id, jumlah, pembeli } = await c.req.json()
+  if (!tanggal || !produk_id || !jumlah || jumlah <= 0) return c.json({ error: 'Data penjualan tidak lengkap.' }, 400)
+  const p = await c.env.DB.prepare('SELECT nama, harga FROM produk WHERE id = ?').bind(produk_id).first<any>()
+  if (!p) return c.json({ error: 'Produk tidak ditemukan.' }, 404)
+  await c.env.DB.prepare(
+    'INSERT INTO penjualan (tanggal, produk_id, nama_produk, jumlah, total, pembeli, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(tanggal, produk_id, p.nama, jumlah, p.harga * jumlah, pembeli || '', c.get('user').id).run()
+  return c.json({ sukses: true })
+})
+
+app.delete('/api/admin/penjualan/:id', requireAuth(['owner', 'admin']), async (c) => {
+  await c.env.DB.prepare('DELETE FROM penjualan WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// --- Produk (owner & admin) ---
+app.get('/api/admin/produk', requireAuth(['owner', 'admin']), async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM produk ORDER BY id').all()
+  return c.json({ produk: results })
+})
+
+app.post('/api/admin/produk', requireAuth(['owner', 'admin']), async (c) => {
+  const { nama, jp, harga, satuan, deskripsi, badge } = await c.req.json()
+  if (!nama || harga == null || !satuan) return c.json({ error: 'Nama, harga, dan satuan wajib diisi.' }, 400)
+  await c.env.DB.prepare(
+    'INSERT INTO produk (nama, jp, harga, satuan, deskripsi, badge) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null).run()
+  return c.json({ sukses: true })
+})
+
+app.put('/api/admin/produk/:id', requireAuth(['owner', 'admin']), async (c) => {
+  const { nama, jp, harga, satuan, deskripsi, badge, aktif } = await c.req.json()
+  await c.env.DB.prepare(
+    'UPDATE produk SET nama=?, jp=?, harga=?, satuan=?, deskripsi=?, badge=?, aktif=? WHERE id=?'
+  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null, aktif ? 1 : 0, c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+app.delete('/api/admin/produk/:id', requireAuth(['owner', 'admin']), async (c) => {
+  await c.env.DB.prepare('UPDATE produk SET aktif = 0 WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// --- Pengguna (hanya owner) ---
+app.get('/api/admin/users', requireAuth(['owner']), async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, username, nama, role, aktif, created_at FROM users ORDER BY id'
+  ).all()
+  return c.json({ users: results })
+})
+
+app.post('/api/admin/users', requireAuth(['owner']), async (c) => {
+  const { username, nama, password, role } = await c.req.json()
+  if (!username || !nama || !password || !role) return c.json({ error: 'Semua kolom wajib diisi.' }, 400)
+  if (password.length < 6) return c.json({ error: 'Kata sandi minimal 6 karakter.' }, 400)
+  if (!['owner', 'admin', 'karyawan'].includes(role)) return c.json({ error: 'Peran tidak valid.' }, 400)
+  const ada = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username.toLowerCase()).first()
+  if (ada) return c.json({ error: 'Username sudah terpakai.' }, 409)
+  await c.env.DB.prepare('INSERT INTO users (username, password_hash, nama, role) VALUES (?, ?, ?, ?)')
+    .bind(username.toLowerCase(), await hashPassword(password), nama, role).run()
+  return c.json({ sukses: true })
+})
+
+app.put('/api/admin/users/:id/status', requireAuth(['owner']), async (c) => {
+  const id = parseInt(c.req.param('id'))
+  if (id === c.get('user').id) return c.json({ error: 'Tidak bisa menonaktifkan akun sendiri.' }, 400)
+  const { aktif } = await c.req.json()
+  await c.env.DB.prepare('UPDATE users SET aktif = ? WHERE id = ?').bind(aktif ? 1 : 0, id).run()
+  if (!aktif) await c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id).run()
+  return c.json({ sukses: true })
+})
+
+app.put('/api/admin/users/:id/password', requireAuth(['owner']), async (c) => {
+  const { password } = await c.req.json()
+  if (!password || password.length < 6) return c.json({ error: 'Kata sandi minimal 6 karakter.' }, 400)
+  await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+    .bind(await hashPassword(password), c.req.param('id')).run()
+  return c.json({ sukses: true })
 })
 
 export default app

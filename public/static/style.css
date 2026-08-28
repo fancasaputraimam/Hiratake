@@ -205,3 +205,41 @@
   color: #fff;
   transform: translateY(-3px);
 }
+
+/* ===== Dashboard Admin ===== */
+.tab-btn {
+  padding: 0.65rem 1.1rem;
+  font-size: 0.85rem;
+  color: rgba(247, 243, 234, 0.6);
+  border-bottom: 3px solid transparent;
+  white-space: nowrap;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.tab-btn:hover { color: #F7F3EA; }
+.tab-btn.active { color: #F7F3EA; border-bottom-color: #C73E3A; font-weight: 600; }
+
+.stat-card {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.25rem;
+  box-shadow: 0 4px 14px rgba(43, 43, 43, 0.06);
+}
+.stat-card i { font-size: 1.4rem; display: block; margin-bottom: 0.5rem; }
+.stat-card .stat-val { font-family: 'Noto Serif JP', serif; font-size: 1.3rem; font-weight: 700; }
+.stat-card .stat-label { font-size: 0.75rem; color: rgba(43, 43, 43, 0.5); }
+
+.data-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(43, 43, 43, 0.45);
+  padding: 0.5rem 0.6rem;
+  border-bottom: 2px solid rgba(43, 43, 43, 0.08);
+}
+.data-table td {
+  padding: 0.6rem;
+  border-bottom: 1px solid rgba(43, 43, 43, 0.06);
+  vertical-align: top;
+}
+.data-table tbody tr:hover { background: rgba(199, 62, 58, 0.03); }
