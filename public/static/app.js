@@ -1,5 +1,6 @@
 // ===== Hiratake — Frontend JS =====
-const WA_NUMBER = '6281234567890'; // Ganti dengan nomor WhatsApp Anda
+// Nomor WA otomatis dari pengaturan database (di-inject server), fallback default
+const WA_NUMBER = (window.HIRATAKE_CONFIG && window.HIRATAKE_CONFIG.wa) || '6281234567890';
 
 // Format Rupiah
 const rupiah = (n) => 'Rp ' + n.toLocaleString('id-ID');

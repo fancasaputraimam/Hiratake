@@ -8,7 +8,31 @@ import {
 
 const app = new Hono<{ Bindings: Bindings; Variables: { user: SessionUser } }>()
 
-app.get('/', (c) => {
+// Helper: ambil semua pengaturan sebagai objek
+async function getPengaturan(db: D1Database): Promise<Record<string, string>> {
+  const { results } = await db.prepare('SELECT key, value FROM pengaturan').all<{ key: string; value: string }>()
+  const map: Record<string, string> = {}
+  for (const r of results) map[r.key] = r.value
+  return map
+}
+
+app.get('/', async (c) => {
+  const db = c.env.DB
+  // Statistik ASLI dari database (otomatis sinkron dengan dashboard)
+  const [cfg, baglogAktif, panenRata, pelangganCount] = await Promise.all([
+    getPengaturan(db),
+    db.prepare(`
+      SELECT COALESCE(SUM(b.jumlah),0) - COALESCE((SELECT SUM(k.jumlah) FROM baglog_kejadian k JOIN baglog_batch bb ON bb.id=k.batch_id WHERE bb.status != 'afkir'),0) AS v
+      FROM baglog_batch b WHERE b.status != 'afkir'
+    `).first<any>(),
+    db.prepare("SELECT COALESCE(ROUND(AVG(t.total),1),0) v FROM (SELECT tanggal, SUM(jumlah_kg) total FROM panen WHERE tanggal >= date('now','-30 days') GROUP BY tanggal) t").first<any>(),
+    db.prepare('SELECT COUNT(*) v FROM pelanggan WHERE aktif = 1').first<any>()
+  ])
+  const waNomor = cfg.wa_nomor || '6281234567890'
+  const waTampil = '+' + waNomor.replace(/^(\d{2})(\d{3})(\d{4})(\d+)$/, '$1 $2-$3-$4')
+  const statBaglog = Math.max(0, baglogAktif?.v ?? 0)
+  const statPanen = panenRata?.v ?? 0
+  const statPelanggan = pelangganCount?.v ?? 0
   return c.html(`<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -104,9 +128,9 @@ app.get('/', (c) => {
           </a>
         </div>
         <div class="flex gap-8 mt-10">
-          <div><p class="font-serifjp text-3xl font-bold text-vermillion" data-counter="500">0</p><p class="text-xs text-sumi/60">Baglog Aktif</p></div>
-          <div><p class="font-serifjp text-3xl font-bold text-vermillion" data-counter="25">0</p><p class="text-xs text-sumi/60">Kg / Hari</p></div>
-          <div><p class="font-serifjp text-3xl font-bold text-vermillion" data-counter="100">0</p><p class="text-xs text-sumi/60">Pelanggan Setia</p></div>
+          <div><p class="font-serifjp text-3xl font-bold text-vermillion" data-counter="${statBaglog}">0</p><p class="text-xs text-sumi/60">Baglog Aktif</p></div>
+          <div><p class="font-serifjp text-3xl font-bold text-vermillion" data-counter="${statPanen}">0</p><p class="text-xs text-sumi/60">Kg / Hari (rata-rata)</p></div>
+          <div><p class="font-serifjp text-3xl font-bold text-vermillion" data-counter="${statPelanggan}">0</p><p class="text-xs text-sumi/60">Pelanggan Aktif</p></div>
         </div>
       </div>
       <div class="relative fade-up">
@@ -253,9 +277,9 @@ app.get('/', (c) => {
           </button>
         </form>
         <aside class="fade-up space-y-6">
-          <div class="contact-card"><i class="fab fa-whatsapp text-green-600"></i><div><h3>WhatsApp</h3><p>+62 812-3456-7890</p></div></div>
-          <div class="contact-card"><i class="fas fa-location-dot text-vermillion"></i><div><h3>Lokasi Kumbung</h3><p>Jl. Raya Jamur No. 88, Indonesia</p></div></div>
-          <div class="contact-card"><i class="fas fa-clock text-kin"></i><div><h3>Jam Operasional</h3><p>Setiap hari, 06.00 – 18.00 WIB</p></div></div>
+          <div class="contact-card"><i class="fab fa-whatsapp text-green-600"></i><div><h3>WhatsApp</h3><p>${waTampil}</p></div></div>
+          <div class="contact-card"><i class="fas fa-location-dot text-vermillion"></i><div><h3>Lokasi Kumbung</h3><p>${cfg.alamat || '-'}</p></div></div>
+          <div class="contact-card"><i class="fas fa-clock text-kin"></i><div><h3>Jam Operasional</h3><p>${cfg.jam_operasional || '-'}</p></div></div>
           <div class="bg-vermillion/5 border border-vermillion/20 rounded-2xl p-6">
             <h3 class="font-serifjp font-semibold text-lg mb-2"><i class="fas fa-store mr-2 text-vermillion"></i>Kemitraan & Grosir</h3>
             <p class="text-sm text-sumi/70">Kami membuka kerja sama untuk warung, restoran, katering, dan reseller. Hubungi kami untuk harga khusus grosir dan pasokan rutin.</p>
@@ -298,12 +322,13 @@ app.get('/', (c) => {
   </footer>
 
   <!-- Tombol WhatsApp mengambang -->
-  <a href="https://wa.me/6281234567890?text=Halo%20Hiratake%2C%20saya%20mau%20pesan%20jamur%20tiram"
+  <a href="https://wa.me/${waNomor}?text=Halo%20Hiratake%2C%20saya%20mau%20pesan%20jamur%20tiram"
      target="_blank" rel="noopener" id="wa-float" aria-label="Chat WhatsApp"
      class="fixed bottom-6 right-6 bg-green-500 hover:bg-green-600 text-white w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-xl z-50 transition hover:scale-110">
     <i class="fab fa-whatsapp"></i>
   </a>
 
+  <script>window.HIRATAKE_CONFIG = { wa: "${waNomor}" };</script>
   <script src="/static/app.js"></script>
 </body>
 </html>`)
@@ -385,30 +410,65 @@ app.get('/api/admin/ringkasan', requireAuth(), async (c) => {
     db.prepare("SELECT tanggal, SUM(total) v FROM penjualan WHERE tanggal >= date('now','-6 days') GROUP BY tanggal ORDER BY tanggal").all(),
     db.prepare('SELECT COUNT(*) v FROM produk WHERE aktif = 1').first<any>()
   ])
+  // Metrik Fase 1: baglog, kontaminasi, susut, piutang
+  const [baglog, piutang, susutBulan, kpiBatch] = await Promise.all([
+    db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status != 'afkir' THEN jumlah ELSE 0 END),0) AS total_aktif,
+        COALESCE((SELECT SUM(k.jumlah) FROM baglog_kejadian k JOIN baglog_batch b2 ON b2.id=k.batch_id WHERE b2.status != 'afkir'),0) AS hilang,
+        COALESCE(SUM(jumlah),0) AS total_semua,
+        COALESCE((SELECT SUM(jumlah) FROM baglog_kejadian WHERE jenis='kontaminasi'),0) AS kontaminasi_semua
+      FROM baglog_batch
+    `).first<any>(),
+    db.prepare("SELECT COALESCE(SUM(total),0) v, COUNT(*) n FROM penjualan WHERE status_bayar='tempo'").first<any>(),
+    db.prepare("SELECT COALESCE(SUM(susut_kg),0) v FROM panen WHERE strftime('%Y-%m',tanggal) = strftime('%Y-%m','now')").first<any>(),
+    db.prepare(`
+      SELECT COALESCE(SUM(p.jumlah_kg),0) AS total_kg, COALESCE((SELECT SUM(jumlah) FROM baglog_batch WHERE status='produktif'),0) AS baglog_produktif
+      FROM panen p WHERE p.batch_id IS NOT NULL
+    `).first<any>()
+  ])
   return c.json({
     panenHariIni: panenHariIni.v, panenBulanIni: panenBulanIni.v,
     jualHariIni: jualHariIni.v, jualBulanIni: jualBulanIni.v,
     grafikPanen: panen7.results, grafikPenjualan: jual7.results,
-    totalProduk: totalProduk.v
+    totalProduk: totalProduk.v,
+    baglogAktif: Math.max(0, (baglog?.total_aktif ?? 0) - (baglog?.hilang ?? 0)),
+    kontaminasiPersen: baglog?.total_semua > 0 ? Math.round((baglog.kontaminasi_semua / baglog.total_semua) * 1000) / 10 : 0,
+    piutangTotal: piutang?.v ?? 0, piutangJumlah: piutang?.n ?? 0,
+    susutBulanIni: susutBulan?.v ?? 0,
+    kgPerBaglog: kpiBatch?.baglog_produktif > 0 ? Math.round((kpiBatch.total_kg / kpiBatch.baglog_produktif) * 100) / 100 : 0
   })
 })
 
 // --- Panen (semua role bisa catat & lihat) ---
 app.get('/api/admin/panen', requireAuth(), async (c) => {
   const { results } = await c.env.DB.prepare(`
-    SELECT p.id, p.tanggal, p.jumlah_kg, p.catatan, u.nama AS pencatat
-    FROM panen p LEFT JOIN users u ON u.id = p.user_id
+    SELECT p.id, p.tanggal, p.jumlah_kg, p.grade_a, p.grade_b, p.grade_c, p.susut_kg, p.catatan,
+           u.nama AS pencatat, b.kode AS batch_kode
+    FROM panen p LEFT JOIN users u ON u.id = p.user_id LEFT JOIN baglog_batch b ON b.id = p.batch_id
     ORDER BY p.tanggal DESC, p.id DESC LIMIT 100
   `).all()
   return c.json({ panen: results })
 })
 
 app.post('/api/admin/panen', requireAuth(), async (c) => {
-  const { tanggal, jumlah_kg, catatan } = await c.req.json()
-  if (!tanggal || !jumlah_kg || jumlah_kg <= 0) return c.json({ error: 'Tanggal dan jumlah kg wajib diisi.' }, 400)
-  await c.env.DB.prepare('INSERT INTO panen (tanggal, jumlah_kg, catatan, user_id) VALUES (?, ?, ?, ?)')
-    .bind(tanggal, jumlah_kg, catatan || '', c.get('user').id).run()
-  return c.json({ sukses: true })
+  const { tanggal, batch_id, grade_a, grade_b, grade_c, susut_kg, catatan } = await c.req.json()
+  const ga = parseFloat(grade_a) || 0, gb = parseFloat(grade_b) || 0, gc = parseFloat(grade_c) || 0
+  const susut = parseFloat(susut_kg) || 0
+  const total = Math.round((ga + gb + gc) * 100) / 100
+  if (!tanggal || total <= 0) return c.json({ error: 'Tanggal dan minimal satu grade (A/B/C) wajib diisi.' }, 400)
+  if (batch_id) {
+    const b = await c.env.DB.prepare("SELECT id, status FROM baglog_batch WHERE id = ?").bind(batch_id).first<any>()
+    if (!b) return c.json({ error: 'Batch tidak ditemukan.' }, 404)
+    // Batch yang dipanen otomatis jadi produktif
+    if (b.status === 'inkubasi') {
+      await c.env.DB.prepare("UPDATE baglog_batch SET status = 'produktif' WHERE id = ?").bind(batch_id).run()
+    }
+  }
+  await c.env.DB.prepare(
+    'INSERT INTO panen (tanggal, jumlah_kg, grade_a, grade_b, grade_c, susut_kg, batch_id, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(tanggal, total, ga, gb, gc, susut, batch_id || null, catatan || '', c.get('user').id).run()
+  return c.json({ sukses: true, total })
 })
 
 app.delete('/api/admin/panen/:id', requireAuth(['owner', 'admin']), async (c) => {
@@ -419,21 +479,39 @@ app.delete('/api/admin/panen/:id', requireAuth(['owner', 'admin']), async (c) =>
 // --- Penjualan (semua role bisa catat & lihat) ---
 app.get('/api/admin/penjualan', requireAuth(), async (c) => {
   const { results } = await c.env.DB.prepare(`
-    SELECT j.id, j.tanggal, j.nama_produk, j.jumlah, j.total, j.pembeli, u.nama AS pencatat
-    FROM penjualan j LEFT JOIN users u ON u.id = j.user_id
+    SELECT j.id, j.tanggal, j.nama_produk, j.jumlah, j.total, j.pembeli, j.status_bayar, j.jatuh_tempo, j.tanggal_lunas,
+           u.nama AS pencatat, pl.nama AS pelanggan_nama, pl.tipe AS pelanggan_tipe
+    FROM penjualan j LEFT JOIN users u ON u.id = j.user_id LEFT JOIN pelanggan pl ON pl.id = j.pelanggan_id
     ORDER BY j.tanggal DESC, j.id DESC LIMIT 100
   `).all()
   return c.json({ penjualan: results })
 })
 
 app.post('/api/admin/penjualan', requireAuth(), async (c) => {
-  const { tanggal, produk_id, jumlah, pembeli } = await c.req.json()
+  const { tanggal, produk_id, jumlah, pelanggan_id, pembeli, status_bayar, jatuh_tempo } = await c.req.json()
   if (!tanggal || !produk_id || !jumlah || jumlah <= 0) return c.json({ error: 'Data penjualan tidak lengkap.' }, 400)
+  const bayar = status_bayar === 'tempo' ? 'tempo' : 'lunas'
+  if (bayar === 'tempo' && !jatuh_tempo) return c.json({ error: 'Penjualan tempo wajib diisi tanggal jatuh tempo.' }, 400)
+  if (bayar === 'tempo' && !pelanggan_id) return c.json({ error: 'Penjualan tempo wajib pilih pelanggan terdaftar (untuk penagihan).' }, 400)
   const p = await c.env.DB.prepare('SELECT nama, harga FROM produk WHERE id = ?').bind(produk_id).first<any>()
   if (!p) return c.json({ error: 'Produk tidak ditemukan.' }, 404)
+  let namaPembeli = pembeli || ''
+  if (pelanggan_id) {
+    const pl = await c.env.DB.prepare('SELECT nama FROM pelanggan WHERE id = ? AND aktif = 1').bind(pelanggan_id).first<any>()
+    if (!pl) return c.json({ error: 'Pelanggan tidak ditemukan.' }, 404)
+    namaPembeli = pl.nama
+  }
   await c.env.DB.prepare(
-    'INSERT INTO penjualan (tanggal, produk_id, nama_produk, jumlah, total, pembeli, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).bind(tanggal, produk_id, p.nama, jumlah, p.harga * jumlah, pembeli || '', c.get('user').id).run()
+    'INSERT INTO penjualan (tanggal, produk_id, nama_produk, jumlah, total, pembeli, pelanggan_id, status_bayar, jatuh_tempo, tanggal_lunas, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(tanggal, produk_id, p.nama, jumlah, p.harga * jumlah, namaPembeli, pelanggan_id || null, bayar,
+    bayar === 'tempo' ? jatuh_tempo : null, bayar === 'lunas' ? tanggal : null, c.get('user').id).run()
+  return c.json({ sukses: true })
+})
+
+// Tandai piutang lunas
+app.put('/api/admin/penjualan/:id/lunas', requireAuth(['owner', 'admin']), async (c) => {
+  await c.env.DB.prepare("UPDATE penjualan SET status_bayar='lunas', tanggal_lunas=date('now') WHERE id = ? AND status_bayar='tempo'")
+    .bind(c.req.param('id')).run()
   return c.json({ sukses: true })
 })
 
@@ -504,6 +582,144 @@ app.put('/api/admin/users/:id/password', requireAuth(['owner']), async (c) => {
   if (!password || password.length < 6) return c.json({ error: 'Kata sandi minimal 6 karakter.' }, 400)
   await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
     .bind(await hashPassword(password), c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// ============ FASE 1: BATCH BAGLOG ============
+
+// Daftar batch + agregat panen & kejadian (semua role bisa lihat)
+app.get('/api/admin/baglog', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT b.*,
+      COALESCE((SELECT SUM(k.jumlah) FROM baglog_kejadian k WHERE k.batch_id = b.id AND k.jenis='kontaminasi'),0) AS kontaminasi,
+      COALESCE((SELECT SUM(k.jumlah) FROM baglog_kejadian k WHERE k.batch_id = b.id AND k.jenis IN ('rusak','afkir')),0) AS rusak_afkir,
+      COALESCE((SELECT SUM(p.jumlah_kg) FROM panen p WHERE p.batch_id = b.id),0) AS total_panen_kg
+    FROM baglog_batch b ORDER BY b.tanggal DESC, b.id DESC LIMIT 100
+  `).all()
+  return c.json({ batch: results })
+})
+
+// Buat batch baru (owner & admin) — kode otomatis BG-YYYY-MM-XXX
+app.post('/api/admin/baglog', requireAuth(['owner', 'admin']), async (c) => {
+  const { tanggal, jumlah, sumber, biaya_per_baglog, lokasi, tanggal_masuk_kumbung, catatan } = await c.req.json()
+  if (!tanggal || !jumlah || jumlah <= 0) return c.json({ error: 'Tanggal dan jumlah baglog wajib diisi.' }, 400)
+  const bulan = tanggal.slice(0, 7) // YYYY-MM
+  const last = await c.env.DB.prepare(
+    "SELECT kode FROM baglog_batch WHERE kode LIKE ? ORDER BY kode DESC LIMIT 1"
+  ).bind(`BG-${bulan}-%`).first<any>()
+  const urut = last ? parseInt(last.kode.slice(-3)) + 1 : 1
+  const kode = `BG-${bulan}-${String(urut).padStart(3, '0')}`
+  await c.env.DB.prepare(
+    'INSERT INTO baglog_batch (kode, tanggal, jumlah, sumber, biaya_per_baglog, lokasi, tanggal_masuk_kumbung, status, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(kode, tanggal, jumlah, sumber || 'produksi sendiri', biaya_per_baglog || 0, lokasi || '',
+    tanggal_masuk_kumbung || null, tanggal_masuk_kumbung ? 'produktif' : 'inkubasi', catatan || '', c.get('user').id).run()
+  return c.json({ sukses: true, kode })
+})
+
+// Ubah status batch (owner & admin)
+app.put('/api/admin/baglog/:id/status', requireAuth(['owner', 'admin']), async (c) => {
+  const { status } = await c.req.json()
+  if (!['inkubasi', 'produktif', 'afkir'].includes(status)) return c.json({ error: 'Status tidak valid.' }, 400)
+  await c.env.DB.prepare(
+    `UPDATE baglog_batch SET status = ?, tanggal_afkir = ${status === 'afkir' ? "date('now')" : 'NULL'},
+     tanggal_masuk_kumbung = CASE WHEN ? = 'produktif' AND tanggal_masuk_kumbung IS NULL THEN date('now') ELSE tanggal_masuk_kumbung END
+     WHERE id = ?`
+  ).bind(status, status, c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// Catat kejadian: kontaminasi/rusak/afkir sebagian (semua role — karyawan yang lihat di lapangan)
+app.post('/api/admin/baglog/:id/kejadian', requireAuth(), async (c) => {
+  const batchId = c.req.param('id')
+  const { tanggal, jenis, jumlah, catatan } = await c.req.json()
+  if (!tanggal || !jenis || !jumlah || jumlah <= 0) return c.json({ error: 'Tanggal, jenis, dan jumlah wajib diisi.' }, 400)
+  if (!['kontaminasi', 'rusak', 'afkir'].includes(jenis)) return c.json({ error: 'Jenis tidak valid.' }, 400)
+  const b = await c.env.DB.prepare(`
+    SELECT b.jumlah, COALESCE((SELECT SUM(k.jumlah) FROM baglog_kejadian k WHERE k.batch_id = b.id),0) AS sudah_hilang
+    FROM baglog_batch b WHERE b.id = ?
+  `).bind(batchId).first<any>()
+  if (!b) return c.json({ error: 'Batch tidak ditemukan.' }, 404)
+  // VALIDASI ANTI-MISS: tidak boleh melebihi sisa baglog
+  const sisa = b.jumlah - b.sudah_hilang
+  if (jumlah > sisa) return c.json({ error: `Jumlah melebihi sisa baglog batch ini (sisa: ${sisa}).` }, 400)
+  await c.env.DB.prepare(
+    'INSERT INTO baglog_kejadian (batch_id, tanggal, jenis, jumlah, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(batchId, tanggal, jenis, jumlah, catatan || '', c.get('user').id).run()
+  return c.json({ sukses: true, sisa: sisa - jumlah })
+})
+
+// Riwayat kejadian per batch
+app.get('/api/admin/baglog/:id/kejadian', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT k.*, u.nama AS pencatat FROM baglog_kejadian k LEFT JOIN users u ON u.id = k.user_id
+    WHERE k.batch_id = ? ORDER BY k.tanggal DESC, k.id DESC
+  `).bind(c.req.param('id')).all()
+  return c.json({ kejadian: results })
+})
+
+// ============ FASE 1: PELANGGAN ============
+
+app.get('/api/admin/pelanggan', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT pl.*,
+      COALESCE((SELECT SUM(j.total) FROM penjualan j WHERE j.pelanggan_id = pl.id),0) AS total_belanja,
+      COALESCE((SELECT SUM(j.total) FROM penjualan j WHERE j.pelanggan_id = pl.id AND j.status_bayar='tempo'),0) AS piutang
+    FROM pelanggan pl ORDER BY total_belanja DESC, pl.id
+  `).all()
+  return c.json({ pelanggan: results })
+})
+
+app.post('/api/admin/pelanggan', requireAuth(), async (c) => {
+  const { nama, tipe, wa, alamat, catatan } = await c.req.json()
+  if (!nama) return c.json({ error: 'Nama pelanggan wajib diisi.' }, 400)
+  if (tipe && !['eceran', 'warung', 'resto', 'reseller'].includes(tipe)) return c.json({ error: 'Tipe tidak valid.' }, 400)
+  await c.env.DB.prepare(
+    'INSERT INTO pelanggan (nama, tipe, wa, alamat, catatan) VALUES (?, ?, ?, ?, ?)'
+  ).bind(nama, tipe || 'eceran', wa || '', alamat || '', catatan || '').run()
+  return c.json({ sukses: true })
+})
+
+app.put('/api/admin/pelanggan/:id', requireAuth(['owner', 'admin']), async (c) => {
+  const { nama, tipe, wa, alamat, catatan, aktif } = await c.req.json()
+  if (!nama) return c.json({ error: 'Nama pelanggan wajib diisi.' }, 400)
+  await c.env.DB.prepare(
+    'UPDATE pelanggan SET nama=?, tipe=?, wa=?, alamat=?, catatan=?, aktif=? WHERE id=?'
+  ).bind(nama, tipe || 'eceran', wa || '', alamat || '', catatan || '', aktif ? 1 : 0, c.req.param('id')).run()
+  return c.json({ sukses: true })
+})
+
+// ============ FASE 1: PIUTANG ============
+
+app.get('/api/admin/piutang', requireAuth(), async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT j.id, j.tanggal, j.nama_produk, j.jumlah, j.total, j.jatuh_tempo, j.pembeli,
+      pl.nama AS pelanggan_nama, pl.wa AS pelanggan_wa,
+      CASE WHEN j.jatuh_tempo < date('now') THEN 1 ELSE 0 END AS terlambat
+    FROM penjualan j LEFT JOIN pelanggan pl ON pl.id = j.pelanggan_id
+    WHERE j.status_bayar = 'tempo'
+    ORDER BY j.jatuh_tempo ASC
+  `).all()
+  return c.json({ piutang: results })
+})
+
+// ============ FASE 1: PENGATURAN WEBSITE ============
+
+app.get('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
+  return c.json({ pengaturan: await getPengaturan(c.env.DB) })
+})
+
+app.put('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
+  const body = await c.req.json<Record<string, string>>()
+  const kunciDiizinkan = ['wa_nomor', 'alamat', 'jam_operasional', 'instagram', 'facebook', 'tiktok']
+  const stmts = []
+  for (const [key, value] of Object.entries(body)) {
+    if (!kunciDiizinkan.includes(key)) continue
+    if (key === 'wa_nomor' && !/^\d{9,15}$/.test(String(value))) {
+      return c.json({ error: 'Nomor WA harus angka saja diawali kode negara, contoh: 6281234567890' }, 400)
+    }
+    stmts.push(c.env.DB.prepare('INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(value)))
+  }
+  if (stmts.length) await c.env.DB.batch(stmts)
   return c.json({ sukses: true })
 })
 

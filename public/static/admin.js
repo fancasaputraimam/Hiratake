@@ -33,10 +33,14 @@ async function api(url, opts = {}) {
       if (btn.dataset.roles.split(',').includes(user.role)) btn.classList.remove('hidden');
     });
 
-    document.getElementById('panen-tanggal').value = hariIni();
-    document.getElementById('jual-tanggal').value = hariIni();
+    ['panen-tanggal', 'jual-tanggal', 'bg-tanggal', 'kj-tanggal'].forEach((id) => {
+      const el = document.getElementById(id); if (el) el.value = hariIni();
+    });
 
-    await Promise.all([loadRingkasan(), loadProdukDropdown()]);
+    // Karyawan tidak boleh buat batch baru (hanya lapor kejadian)
+    if (ME.role === 'karyawan') document.getElementById('form-baglog')?.classList.add('hidden');
+
+    await Promise.all([loadRingkasan(), loadProdukDropdown(), loadBatchDropdown(), loadPelangganDropdown()]);
     document.getElementById('loading-screen').remove();
   } catch (e) { /* redirect ke login sudah ditangani */ }
 })();
@@ -48,7 +52,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.classList.add('active');
     document.querySelectorAll('.tab-panel').forEach((p) => p.classList.add('hidden'));
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
-    const loaders = { dashboard: loadRingkasan, panen: loadPanen, penjualan: loadPenjualan, produk: loadProduk, pengguna: loadUsers };
+    const loaders = { dashboard: loadRingkasan, baglog: loadBaglog, panen: loadPanen, penjualan: loadPenjualan, piutang: loadPiutang, pelanggan: loadPelanggan, produk: loadProduk, pengguna: loadUsers, pengaturan: loadPengaturan };
     loaders[btn.dataset.tab]?.();
   });
 });
@@ -67,7 +71,11 @@ async function loadRingkasan() {
     <div class="stat-card"><i class="fas fa-wheat-awn text-matcha"></i><p class="stat-val">${d.panenHariIni} kg</p><p class="stat-label">Panen Hari Ini</p></div>
     <div class="stat-card"><i class="fas fa-calendar-days text-matcha"></i><p class="stat-val">${d.panenBulanIni} kg</p><p class="stat-label">Panen Bulan Ini</p></div>
     <div class="stat-card"><i class="fas fa-coins text-kin"></i><p class="stat-val">${rupiah(d.jualHariIni)}</p><p class="stat-label">Penjualan Hari Ini</p></div>
-    <div class="stat-card"><i class="fas fa-sack-dollar text-kin"></i><p class="stat-val">${rupiah(d.jualBulanIni)}</p><p class="stat-label">Penjualan Bulan Ini</p></div>`;
+    <div class="stat-card"><i class="fas fa-sack-dollar text-kin"></i><p class="stat-val">${rupiah(d.jualBulanIni)}</p><p class="stat-label">Penjualan Bulan Ini</p></div>
+    <div class="stat-card"><i class="fas fa-cubes text-vermillion" style="color:#C73E3A"></i><p class="stat-val">${d.baglogAktif}</p><p class="stat-label">Baglog Aktif</p></div>
+    <div class="stat-card"><i class="fas fa-biohazard text-red-500"></i><p class="stat-val">${d.kontaminasiPersen}%</p><p class="stat-label">Tingkat Kontaminasi</p></div>
+    <div class="stat-card"><i class="fas fa-scale-balanced" style="color:#7A8450"></i><p class="stat-val">${d.kgPerBaglog} kg</p><p class="stat-label">Produktivitas /Baglog</p></div>
+    <div class="stat-card"><i class="fas fa-file-invoice-dollar text-orange-500"></i><p class="stat-val">${rupiah(d.piutangTotal)}</p><p class="stat-label">Piutang (${d.piutangJumlah} nota)</p></div>`;
 
   const labels7 = [...Array(7)].map((_, i) => {
     const dt = new Date(); dt.setDate(dt.getDate() - (6 - i));
@@ -90,18 +98,124 @@ async function loadRingkasan() {
   });
 }
 
+// ---------- Baglog ----------
+async function loadBatchDropdown() {
+  const { batch } = await api('/api/admin/baglog');
+  const aktif = batch.filter((b) => b.status !== 'afkir');
+  const opsi = aktif.map((b) => `<option value="${b.id}">${b.kode} — ${b.lokasi || b.sumber} (${b.status})</option>`).join('');
+  const kjSel = document.getElementById('kj-batch');
+  if (kjSel) kjSel.innerHTML = opsi || '<option value="">Belum ada batch</option>';
+  const pnSel = document.getElementById('panen-batch');
+  if (pnSel) pnSel.innerHTML = '<option value="">— tanpa batch —</option>' + opsi;
+}
+
+async function loadBaglog() {
+  const { batch } = await api('/api/admin/baglog');
+  const statusBadge = { inkubasi: 'bg-blue-100 text-blue-700', produktif: 'bg-green-100 text-green-700', afkir: 'bg-gray-200 text-gray-500' };
+  const boleh = ['owner', 'admin'].includes(ME.role);
+  document.getElementById('table-baglog').innerHTML = `
+    <thead><tr><th>Kode</th><th>Tanggal</th><th>Awal</th><th>Kontam.</th><th>Sisa</th><th>Panen (kg)</th><th>kg/Baglog</th><th>Status</th>${boleh ? '<th></th>' : ''}</tr></thead>
+    <tbody>${batch.map((b) => {
+      const hilang = (b.kontaminasi || 0) + (b.rusak_afkir || 0);
+      const sisa = b.jumlah - hilang;
+      const prod = b.jumlah > 0 ? (b.total_panen_kg / b.jumlah).toFixed(2) : '0';
+      return `
+      <tr class="cursor-pointer ${b.status === 'afkir' ? 'opacity-50' : ''}" onclick="lihatKejadian(${b.id}, '${b.kode}')">
+        <td class="font-mono font-semibold">${b.kode}</td>
+        <td>${b.tanggal}<br><span class="text-xs text-gray-400">${b.sumber}</span></td>
+        <td>${b.jumlah}</td>
+        <td class="${b.kontaminasi > 0 ? 'text-red-600 font-semibold' : ''}">${b.kontaminasi || 0}</td>
+        <td class="font-semibold">${sisa}</td>
+        <td>${b.total_panen_kg || 0}</td>
+        <td class="font-semibold" style="color:#7A8450">${prod}</td>
+        <td><span class="text-xs px-2 py-0.5 rounded-full ${statusBadge[b.status]}">${b.status}</span></td>
+        ${boleh ? `<td onclick="event.stopPropagation()">
+          ${b.status === 'inkubasi' ? `<button onclick="ubahStatusBatch(${b.id},'produktif')" class="text-green-600 mr-1" title="Masukkan ke kumbung (produktif)"><i class="fas fa-arrow-right-to-bracket"></i></button>` : ''}
+          ${b.status !== 'afkir' ? `<button onclick="ubahStatusBatch(${b.id},'afkir')" class="text-gray-400 hover:text-red-500" title="Afkir seluruh batch"><i class="fas fa-ban"></i></button>` : ''}
+        </td>` : ''}
+      </tr>`; }).join('') || '<tr><td colspan="9" class="text-center text-gray-400 py-4">Belum ada batch. Buat batch baglog pertama Anda!</td></tr>'}</tbody>`;
+}
+
+window.lihatKejadian = async (id, kode) => {
+  const { kejadian } = await api(`/api/admin/baglog/${id}/kejadian`);
+  document.getElementById('detail-kejadian').classList.remove('hidden');
+  document.getElementById('detail-kejadian-judul').textContent = 'Riwayat Kejadian — ' + kode;
+  const jenisBadge = { kontaminasi: 'bg-red-100 text-red-700', rusak: 'bg-yellow-100 text-yellow-700', afkir: 'bg-gray-200 text-gray-600' };
+  document.getElementById('table-kejadian').innerHTML = `
+    <thead><tr><th>Tanggal</th><th>Jenis</th><th>Jumlah</th><th>Catatan</th><th>Pelapor</th></tr></thead>
+    <tbody>${kejadian.map((k) => `
+      <tr><td>${k.tanggal}</td><td><span class="text-xs px-2 py-0.5 rounded-full ${jenisBadge[k.jenis]}">${k.jenis}</span></td>
+      <td class="font-semibold">${k.jumlah}</td><td>${k.catatan || '-'}</td><td>${k.pencatat || '-'}</td></tr>`).join('') || '<tr><td colspan="5" class="text-center text-gray-400 py-3">Tidak ada kejadian — batch sehat 👍</td></tr>'}</tbody>`;
+};
+
+window.ubahStatusBatch = async (id, status) => {
+  const label = status === 'afkir' ? 'Afkir seluruh batch ini? Batch tidak akan dihitung lagi sebagai aktif.' : 'Tandai batch masuk kumbung (produktif)?';
+  if (!confirm(label)) return;
+  try { await api(`/api/admin/baglog/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }); toast('Status batch diperbarui'); loadBaglog(); loadBatchDropdown(); }
+  catch (ex) { toast(ex.message, false); }
+};
+
+document.getElementById('form-baglog')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api('/api/admin/baglog', { method: 'POST', body: JSON.stringify({
+      tanggal: document.getElementById('bg-tanggal').value,
+      jumlah: parseInt(document.getElementById('bg-jumlah').value),
+      sumber: document.getElementById('bg-sumber').value.trim(),
+      biaya_per_baglog: parseInt(document.getElementById('bg-biaya').value) || 0,
+      lokasi: document.getElementById('bg-lokasi').value.trim(),
+      tanggal_masuk_kumbung: document.getElementById('bg-masuk').value || null,
+      catatan: document.getElementById('bg-catatan').value.trim()
+    })});
+    toast(`Batch ${r.kode} dibuat ✅`);
+    document.getElementById('form-baglog').reset();
+    document.getElementById('bg-tanggal').value = hariIni();
+    document.getElementById('bg-sumber').value = 'produksi sendiri';
+    loadBaglog(); loadBatchDropdown();
+  } catch (ex) { toast(ex.message, false); }
+});
+
+document.getElementById('form-kejadian')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const batchId = document.getElementById('kj-batch').value;
+  if (!batchId) return toast('Pilih batch dulu', false);
+  try {
+    const r = await api(`/api/admin/baglog/${batchId}/kejadian`, { method: 'POST', body: JSON.stringify({
+      tanggal: document.getElementById('kj-tanggal').value,
+      jenis: document.getElementById('kj-jenis').value,
+      jumlah: parseInt(document.getElementById('kj-jumlah').value),
+      catatan: document.getElementById('kj-catatan').value.trim()
+    })});
+    toast(`Kejadian dicatat. Sisa baglog batch: ${r.sisa}`);
+    document.getElementById('kj-jumlah').value = ''; document.getElementById('kj-catatan').value = '';
+    loadBaglog();
+  } catch (ex) { toast(ex.message, false); }
+});
+
 // ---------- Panen ----------
+function previewTotalPanen() {
+  const t = (parseFloat(document.getElementById('panen-ga').value) || 0)
+    + (parseFloat(document.getElementById('panen-gb').value) || 0)
+    + (parseFloat(document.getElementById('panen-gc').value) || 0);
+  document.getElementById('panen-total-preview').textContent = (Math.round(t * 100) / 100) + ' kg';
+}
+['panen-ga', 'panen-gb', 'panen-gc'].forEach((id) => document.getElementById(id)?.addEventListener('input', previewTotalPanen));
+
 async function loadPanen() {
   const { panen } = await api('/api/admin/panen');
   const boleh = ['owner', 'admin'].includes(ME.role);
   document.getElementById('table-panen').innerHTML = `
-    <thead><tr><th>Tanggal</th><th>Jumlah (kg)</th><th>Catatan</th><th>Pencatat</th>${boleh ? '<th></th>' : ''}</tr></thead>
+    <thead><tr><th>Tanggal</th><th>Batch</th><th>A</th><th>B</th><th>C</th><th>Total</th><th>Susut</th><th>Pencatat</th>${boleh ? '<th></th>' : ''}</tr></thead>
     <tbody>${panen.map((p) => `
       <tr>
-        <td>${p.tanggal}</td><td class="font-semibold">${p.jumlah_kg}</td>
-        <td>${p.catatan || '-'}</td><td>${p.pencatat || '-'}</td>
+        <td>${p.tanggal}${p.catatan ? `<br><span class="text-xs text-gray-400">${p.catatan}</span>` : ''}</td>
+        <td class="font-mono text-xs">${p.batch_kode || '-'}</td>
+        <td>${p.grade_a || 0}</td><td>${p.grade_b || 0}</td><td>${p.grade_c || 0}</td>
+        <td class="font-semibold">${p.jumlah_kg} kg</td>
+        <td class="${p.susut_kg > 0 ? 'text-red-500' : ''}">${p.susut_kg || 0}</td>
+        <td>${p.pencatat || '-'}</td>
         ${boleh ? `<td><button onclick="hapusPanen(${p.id})" class="text-red-500 hover:text-red-700" title="Hapus"><i class="fas fa-trash"></i></button></td>` : ''}
-      </tr>`).join('') || '<tr><td colspan="5" class="text-center text-gray-400 py-4">Belum ada data</td></tr>'}</tbody>`;
+      </tr>`).join('') || '<tr><td colspan="9" class="text-center text-gray-400 py-4">Belum ada data</td></tr>'}</tbody>`;
 }
 
 document.getElementById('form-panen').addEventListener('submit', async (e) => {
@@ -109,11 +223,16 @@ document.getElementById('form-panen').addEventListener('submit', async (e) => {
   try {
     await api('/api/admin/panen', { method: 'POST', body: JSON.stringify({
       tanggal: document.getElementById('panen-tanggal').value,
-      jumlah_kg: parseFloat(document.getElementById('panen-kg').value),
+      batch_id: parseInt(document.getElementById('panen-batch').value) || null,
+      grade_a: parseFloat(document.getElementById('panen-ga').value) || 0,
+      grade_b: parseFloat(document.getElementById('panen-gb').value) || 0,
+      grade_c: parseFloat(document.getElementById('panen-gc').value) || 0,
+      susut_kg: parseFloat(document.getElementById('panen-susut').value) || 0,
       catatan: document.getElementById('panen-catatan').value.trim()
     })});
     toast('Panen berhasil dicatat 🍄');
-    document.getElementById('panen-kg').value = ''; document.getElementById('panen-catatan').value = '';
+    ['panen-ga', 'panen-gb', 'panen-gc', 'panen-susut', 'panen-catatan'].forEach((id) => document.getElementById(id).value = '');
+    previewTotalPanen();
     loadPanen();
   } catch (ex) { toast(ex.message, false); }
 });
@@ -142,18 +261,35 @@ function updateTotalJual() {
 document.getElementById('jual-produk').addEventListener('change', updateTotalJual);
 document.getElementById('jual-jumlah').addEventListener('input', updateTotalJual);
 
+async function loadPelangganDropdown() {
+  const { pelanggan } = await api('/api/admin/pelanggan');
+  const sel = document.getElementById('jual-pelanggan');
+  if (sel) sel.innerHTML = '<option value="">— umum / tanpa nama —</option>' +
+    pelanggan.filter((p) => p.aktif).map((p) => `<option value="${p.id}">${p.nama} (${p.tipe})</option>`).join('');
+}
+
+document.getElementById('jual-bayar')?.addEventListener('change', (e) => {
+  document.getElementById('jual-tempo-wrap').classList.toggle('hidden', e.target.value !== 'tempo');
+});
+
 async function loadPenjualan() {
   const { penjualan } = await api('/api/admin/penjualan');
   const boleh = ['owner', 'admin'].includes(ME.role);
   document.getElementById('table-penjualan').innerHTML = `
-    <thead><tr><th>Tanggal</th><th>Produk</th><th>Jml</th><th>Total</th><th>Pembeli</th><th>Pencatat</th>${boleh ? '<th></th>' : ''}</tr></thead>
+    <thead><tr><th>Tanggal</th><th>Produk</th><th>Jml</th><th>Total</th><th>Pembeli</th><th>Bayar</th><th>Pencatat</th>${boleh ? '<th></th>' : ''}</tr></thead>
     <tbody>${penjualan.map((j) => `
       <tr>
         <td>${j.tanggal}</td><td>${j.nama_produk}</td><td>${j.jumlah}</td>
         <td class="font-semibold" style="color:#C73E3A">${rupiah(j.total)}</td>
-        <td>${j.pembeli || '-'}</td><td>${j.pencatat || '-'}</td>
-        ${boleh ? `<td><button onclick="hapusJual(${j.id})" class="text-red-500 hover:text-red-700" title="Hapus"><i class="fas fa-trash"></i></button></td>` : ''}
-      </tr>`).join('') || '<tr><td colspan="7" class="text-center text-gray-400 py-4">Belum ada data</td></tr>'}</tbody>`;
+        <td>${j.pelanggan_nama || j.pembeli || '-'}</td>
+        <td>${j.status_bayar === 'tempo'
+          ? `<span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">tempo · ${j.jatuh_tempo || ''}</span>`
+          : '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">lunas</span>'}</td>
+        <td>${j.pencatat || '-'}</td>
+        ${boleh ? `<td class="whitespace-nowrap">
+          ${j.status_bayar === 'tempo' ? `<button onclick="tandaiLunas(${j.id})" class="text-green-600 mr-2" title="Tandai lunas"><i class="fas fa-circle-check"></i></button>` : ''}
+          <button onclick="hapusJual(${j.id})" class="text-red-500 hover:text-red-700" title="Hapus"><i class="fas fa-trash"></i></button></td>` : ''}
+      </tr>`).join('') || '<tr><td colspan="8" class="text-center text-gray-400 py-4">Belum ada data</td></tr>'}</tbody>`;
 }
 
 document.getElementById('form-penjualan').addEventListener('submit', async (e) => {
@@ -163,11 +299,126 @@ document.getElementById('form-penjualan').addEventListener('submit', async (e) =
       tanggal: document.getElementById('jual-tanggal').value,
       produk_id: parseInt(document.getElementById('jual-produk').value),
       jumlah: parseInt(document.getElementById('jual-jumlah').value),
-      pembeli: document.getElementById('jual-pembeli').value.trim()
+      pelanggan_id: parseInt(document.getElementById('jual-pelanggan').value) || null,
+      pembeli: document.getElementById('jual-pembeli').value.trim(),
+      status_bayar: document.getElementById('jual-bayar').value,
+      jatuh_tempo: document.getElementById('jual-tempo').value || null
     })});
     toast('Penjualan berhasil dicatat 💰');
     document.getElementById('jual-jumlah').value = 1; document.getElementById('jual-pembeli').value = '';
+    document.getElementById('jual-bayar').value = 'lunas';
+    document.getElementById('jual-tempo-wrap').classList.add('hidden');
     updateTotalJual(); loadPenjualan();
+  } catch (ex) { toast(ex.message, false); }
+});
+
+window.tandaiLunas = async (id) => {
+  if (!confirm('Tandai piutang ini sudah dibayar lunas?')) return;
+  try { await api(`/api/admin/penjualan/${id}/lunas`, { method: 'PUT' }); toast('Piutang lunas ✅'); loadPenjualan(); }
+  catch (ex) { toast(ex.message, false); }
+};
+
+// ---------- Piutang ----------
+async function loadPiutang() {
+  const { piutang } = await api('/api/admin/piutang');
+  const total = piutang.reduce((s, p) => s + p.total, 0);
+  document.getElementById('piutang-total').textContent = rupiah(total);
+  const boleh = ['owner', 'admin'].includes(ME.role);
+  document.getElementById('table-piutang').innerHTML = `
+    <thead><tr><th>Jatuh Tempo</th><th>Pelanggan</th><th>Produk</th><th>Nominal</th><th>Status</th><th></th></tr></thead>
+    <tbody>${piutang.map((p) => `
+      <tr class="${p.terlambat ? 'bg-red-50' : ''}">
+        <td class="${p.terlambat ? 'text-red-600 font-semibold' : ''}">${p.jatuh_tempo}${p.terlambat ? ' ⚠️' : ''}</td>
+        <td>${p.pelanggan_nama || p.pembeli || '-'}</td>
+        <td>${p.nama_produk} ×${p.jumlah}<br><span class="text-xs text-gray-400">nota ${p.tanggal}</span></td>
+        <td class="font-semibold" style="color:#C73E3A">${rupiah(p.total)}</td>
+        <td>${p.terlambat ? '<span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">TERLAMBAT</span>' : '<span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">berjalan</span>'}</td>
+        <td class="whitespace-nowrap">
+          ${p.pelanggan_wa ? `<a href="https://wa.me/${p.pelanggan_wa}?text=${encodeURIComponent('Halo, mengingatkan pembayaran ' + p.nama_produk + ' senilai ' + rupiah(p.total) + ' jatuh tempo ' + p.jatuh_tempo + '. Terima kasih 🙏 — Hiratake')}" target="_blank" class="text-green-600 mr-2" title="Tagih via WA"><i class="fab fa-whatsapp"></i></a>` : ''}
+          ${boleh ? `<button onclick="tandaiLunasPiutang(${p.id})" class="text-green-600" title="Tandai lunas"><i class="fas fa-circle-check"></i></button>` : ''}
+        </td>
+      </tr>`).join('') || '<tr><td colspan="6" class="text-center text-gray-400 py-4">Tidak ada piutang — semua lunas! 🎉</td></tr>'}</tbody>`;
+}
+
+window.tandaiLunasPiutang = async (id) => {
+  if (!confirm('Tandai piutang ini sudah dibayar lunas?')) return;
+  try { await api(`/api/admin/penjualan/${id}/lunas`, { method: 'PUT' }); toast('Piutang lunas ✅'); loadPiutang(); }
+  catch (ex) { toast(ex.message, false); }
+};
+
+// ---------- Pelanggan ----------
+async function loadPelanggan() {
+  const { pelanggan } = await api('/api/admin/pelanggan');
+  const tipeBadge = { eceran: 'bg-gray-100 text-gray-600', warung: 'bg-blue-100 text-blue-700', resto: 'bg-purple-100 text-purple-700', reseller: 'bg-green-100 text-green-700' };
+  const boleh = ['owner', 'admin'].includes(ME.role);
+  document.getElementById('table-pelanggan').innerHTML = `
+    <thead><tr><th>Nama</th><th>Tipe</th><th>WA</th><th>Total Belanja</th><th>Piutang</th>${boleh ? '<th></th>' : ''}</tr></thead>
+    <tbody>${pelanggan.map((p) => `
+      <tr class="${p.aktif ? '' : 'opacity-50'}">
+        <td>${p.nama}${p.alamat ? `<br><span class="text-xs text-gray-400">${p.alamat}</span>` : ''}</td>
+        <td><span class="text-xs px-2 py-0.5 rounded-full ${tipeBadge[p.tipe]}">${p.tipe}</span></td>
+        <td>${p.wa ? `<a href="https://wa.me/${p.wa}" target="_blank" class="text-green-600"><i class="fab fa-whatsapp mr-1"></i>${p.wa}</a>` : '-'}</td>
+        <td class="font-semibold">${rupiah(p.total_belanja)}</td>
+        <td class="${p.piutang > 0 ? 'text-orange-600 font-semibold' : 'text-gray-400'}">${p.piutang > 0 ? rupiah(p.piutang) : '-'}</td>
+        ${boleh ? `<td><button onclick='editPelanggan(${JSON.stringify(p).replace(/'/g, "&#39;")})' class="text-blue-500 hover:text-blue-700" title="Ubah"><i class="fas fa-pen"></i></button></td>` : ''}
+      </tr>`).join('') || '<tr><td colspan="6" class="text-center text-gray-400 py-4">Belum ada pelanggan terdaftar</td></tr>'}</tbody>`;
+}
+
+window.editPelanggan = (p) => {
+  document.getElementById('pl-id').value = p.id;
+  document.getElementById('pl-nama').value = p.nama;
+  document.getElementById('pl-tipe').value = p.tipe;
+  document.getElementById('pl-wa').value = p.wa || '';
+  document.getElementById('pl-alamat').value = p.alamat || '';
+  document.getElementById('pl-catatan').value = p.catatan || '';
+  document.getElementById('pelanggan-form-title').innerHTML = '<i class="fas fa-pen text-blue-500 mr-2"></i>Ubah Pelanggan';
+  document.getElementById('pl-batal').classList.remove('hidden');
+};
+
+document.getElementById('pl-batal')?.addEventListener('click', () => {
+  document.getElementById('form-pelanggan').reset();
+  document.getElementById('pl-id').value = '';
+  document.getElementById('pelanggan-form-title').innerHTML = '<i class="fas fa-user-plus text-vermillion mr-2"></i>Tambah Pelanggan';
+  document.getElementById('pl-batal').classList.add('hidden');
+});
+
+document.getElementById('form-pelanggan')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('pl-id').value;
+  const body = {
+    nama: document.getElementById('pl-nama').value.trim(),
+    tipe: document.getElementById('pl-tipe').value,
+    wa: document.getElementById('pl-wa').value.trim().replace(/[^0-9]/g, ''),
+    alamat: document.getElementById('pl-alamat').value.trim(),
+    catatan: document.getElementById('pl-catatan').value.trim(),
+    aktif: 1
+  };
+  try {
+    if (id) await api('/api/admin/pelanggan/' + id, { method: 'PUT', body: JSON.stringify(body) });
+    else await api('/api/admin/pelanggan', { method: 'POST', body: JSON.stringify(body) });
+    toast(id ? 'Pelanggan diperbarui ✅' : 'Pelanggan ditambahkan 👤');
+    document.getElementById('pl-batal').click();
+    loadPelanggan(); loadPelangganDropdown();
+  } catch (ex) { toast(ex.message, false); }
+});
+
+// ---------- Pengaturan Web ----------
+async function loadPengaturan() {
+  const { pengaturan } = await api('/api/admin/pengaturan');
+  document.getElementById('cfg-wa').value = pengaturan.wa_nomor || '';
+  document.getElementById('cfg-alamat').value = pengaturan.alamat || '';
+  document.getElementById('cfg-jam').value = pengaturan.jam_operasional || '';
+}
+
+document.getElementById('form-pengaturan')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/admin/pengaturan', { method: 'PUT', body: JSON.stringify({
+      wa_nomor: document.getElementById('cfg-wa').value.trim().replace(/[^0-9]/g, ''),
+      alamat: document.getElementById('cfg-alamat').value.trim(),
+      jam_operasional: document.getElementById('cfg-jam').value.trim()
+    })});
+    toast('Pengaturan tersimpan & langsung aktif di website ✅');
   } catch (ex) { toast(ex.message, false); }
 });
 
