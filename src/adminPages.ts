@@ -641,6 +641,51 @@ export const adminPage = () => `<!DOCTYPE html>
         <h2 class="font-serifjp font-semibold mb-3"><i class="fas fa-lightbulb text-kin mr-2"></i>Analisis Otomatis</h2>
         <ul id="laporan-insight" class="space-y-2 text-sm"></ul>
       </div>
+
+      <!-- Grafik Tren Antar-Bulan -->
+      <div class="mt-6 bg-white rounded-2xl shadow p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h2 class="font-serifjp font-semibold"><i class="fas fa-chart-line text-matcha mr-2"></i>Tren Antar-Bulan</h2>
+          <select id="tren-n" class="form-input" style="max-width:160px">
+            <option value="6">6 bulan terakhir</option>
+            <option value="12">12 bulan terakhir</option>
+            <option value="24">24 bulan terakhir</option>
+          </select>
+        </div>
+        <div class="grid lg:grid-cols-2 gap-6">
+          <div>
+            <p class="text-xs text-sumi/50 mb-1">Omzet vs Pengeluaran vs Laba (Rp)</p>
+            <canvas id="chart-tren-uang" height="220"></canvas>
+          </div>
+          <div>
+            <p class="text-xs text-sumi/50 mb-1">Panen (kg) & HPP per kg (Rp)</p>
+            <canvas id="chart-tren-panen" height="220"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kalkulator Harga Jual -->
+      <div class="mt-6 bg-white rounded-2xl shadow p-5" id="kalkulator-harga">
+        <h2 class="font-serifjp font-semibold mb-1"><i class="fas fa-calculator text-vermillion mr-2"></i>Kalkulator Harga Jual</h2>
+        <p class="text-xs text-sumi/50 mb-4">Harga pokok (HPP/kg) diambil otomatis dari laporan bulan terpilih — bisa diubah manual. Harga jual saran = harga pokok + margin keuntungan, dibulatkan ke Rp 500 terdekat.</p>
+        <div class="flex flex-wrap items-end gap-4 mb-4">
+          <div>
+            <label class="block text-sm mb-1 font-medium" for="kalk-hpp">Harga Pokok / kg (Rp)</label>
+            <input id="kalk-hpp" type="number" min="0" step="100" class="form-input" style="max-width:180px">
+          </div>
+          <div>
+            <label class="block text-sm mb-1 font-medium" for="kalk-margin">Margin Untung (%)</label>
+            <input id="kalk-margin" type="number" min="0" max="500" step="1" value="15" class="form-input" style="max-width:140px">
+          </div>
+          <button id="kalk-hitung" class="bg-vermillion hover:bg-red-700 text-white px-6 py-2.5 rounded-full text-sm font-medium transition"><i class="fas fa-equals mr-1"></i>Hitung</button>
+        </div>
+        <div id="kalk-hasil" class="hidden mb-4 p-4 rounded-xl bg-washi border border-kin/30">
+          <p class="text-sm">Harga jual saran per kg: <strong id="kalk-per-kg" class="text-vermillion text-lg"></strong> <span class="text-xs text-sumi/50" id="kalk-untung-kg"></span></p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm data-table" id="table-kalkulator"></table>
+        </div>
+      </div>
     </section>
 
     <!-- Tab: Pengaturan Web (owner & admin) -->

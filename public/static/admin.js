@@ -913,9 +913,99 @@ async function loadLaporan() {
   if (kat.length === 0 && d.omzet > 0) insights.push(`💡 Belum ada pengeluaran tercatat bulan ini — catat semua biaya agar laba/rugi & HPP akurat.`);
   if (!insights.length) insights.push('Belum cukup data untuk analisis. Mulai catat panen, penjualan, dan pengeluaran.');
   document.getElementById('laporan-insight').innerHTML = insights.map((i) => `<li class="bg-washi rounded-lg px-4 py-2.5">${i}</li>`).join('');
+
+  // Grafik tren antar-bulan + kalkulator harga
+  loadTren();
+  const kalkHpp = document.getElementById('kalk-hpp');
+  if (kalkHpp && (!kalkHpp.value || kalkHpp.dataset.auto !== '0')) { kalkHpp.value = d.hppPerKg || ''; kalkHpp.dataset.auto = '1'; }
+  if (d.hppPerKg > 0) hitungHargaJual();
 }
 
 document.getElementById('laporan-muat')?.addEventListener('click', loadLaporan);
+
+// ---------- Tren antar-bulan ----------
+let chartTrenUang, chartTrenPanen;
+async function loadTren() {
+  const n = document.getElementById('tren-n')?.value || '6';
+  const { data } = await api('/api/admin/tren?n=' + n);
+  const labels = data.map((r) => {
+    const [y, m] = r.bulan.split('-');
+    return ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][+m - 1] + ' ' + y.slice(2);
+  });
+
+  chartTrenUang?.destroy();
+  chartTrenUang = new Chart(document.getElementById('chart-tren-uang'), {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar', label: 'Omzet', data: data.map((r) => r.omzet), backgroundColor: '#7A8450' },
+        { type: 'bar', label: 'Pengeluaran', data: data.map((r) => r.pengeluaran), backgroundColor: '#C73E3A' },
+        { type: 'line', label: 'Laba', data: data.map((r) => r.laba), borderColor: '#C9A227', backgroundColor: '#C9A227', tension: 0.3 }
+      ]
+    },
+    options: {
+      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + rupiah(ctx.raw) } } },
+      scales: { y: { ticks: { callback: (v) => (v >= 1000000 ? (v / 1000000) + ' jt' : v >= 1000 ? (v / 1000) + ' rb' : v) } } }
+    }
+  });
+
+  chartTrenPanen?.destroy();
+  chartTrenPanen = new Chart(document.getElementById('chart-tren-panen'), {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar', label: 'Panen (kg)', data: data.map((r) => r.panenKg), backgroundColor: '#7A8450', yAxisID: 'y' },
+        { type: 'line', label: 'HPP/kg (Rp)', data: data.map((r) => r.hppPerKg), borderColor: '#C73E3A', backgroundColor: '#C73E3A', tension: 0.3, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      plugins: { legend: { position: 'bottom' } },
+      scales: {
+        y: { position: 'left', title: { display: true, text: 'kg' } },
+        y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: (v) => (v >= 1000 ? (v / 1000) + ' rb' : v) } }
+      }
+    }
+  });
+}
+document.getElementById('tren-n')?.addEventListener('change', loadTren);
+
+// ---------- Kalkulator harga jual ----------
+const bulatkan500 = (n) => Math.ceil(n / 500) * 500;
+async function hitungHargaJual() {
+  const hpp = Number(document.getElementById('kalk-hpp').value) || 0;
+  const margin = Number(document.getElementById('kalk-margin').value) || 0;
+  if (hpp <= 0) { toast('Isi harga pokok per kg dulu (atau catat pengeluaran & panen agar HPP otomatis terhitung).', false); return; }
+
+  const perKgPas = hpp * (1 + margin / 100);
+  const perKg = bulatkan500(perKgPas);
+  document.getElementById('kalk-hasil').classList.remove('hidden');
+  document.getElementById('kalk-per-kg').textContent = rupiah(perKg);
+  document.getElementById('kalk-untung-kg').textContent = `(pokok ${rupiah(hpp)} + untung ${margin}% = ${rupiah(Math.round(perKgPas))}, dibulatkan) → untung bersih ${rupiah(perKg - hpp)}/kg`;
+
+  // Tabel per produk (harga pokok = HPP/kg × berat, saran = pokok × (1+margin) dibulatkan 500)
+  try {
+    const { produk } = await api('/api/admin/produk');
+    const rows = produk.map((p) => {
+      const berat = Number(p.berat_kg) || 0;
+      if (berat <= 0) return `<tr><td class="py-2">${p.nama}</td><td class="text-right">${rupiah(p.harga)}</td><td class="text-right text-sumi/40" colspan="3">berat/kg belum diisi</td></tr>`;
+      const pokok = hpp * berat;
+      const saran = bulatkan500(pokok * (1 + margin / 100));
+      const selisih = saran - p.harga;
+      const cls = p.harga < pokok ? 'text-red-600 font-semibold' : selisih > 0 ? 'text-orange-600' : 'text-green-700';
+      const ket = p.harga < pokok ? '⚠️ di bawah pokok!' : selisih > 0 ? `naikkan +${rupiah(selisih)}` : selisih < 0 ? `sudah lebih tinggi ${rupiah(-selisih)}` : 'pas ✓';
+      return `<tr class="border-b border-gray-100">
+        <td class="py-2">${p.nama} <span class="text-xs text-sumi/40">(${berat} kg)</span></td>
+        <td class="text-right">${rupiah(p.harga)}</td>
+        <td class="text-right">${rupiah(Math.round(pokok))}</td>
+        <td class="text-right font-semibold" style="color:#C73E3A">${rupiah(saran)}</td>
+        <td class="text-right ${cls}">${ket}</td></tr>`;
+    }).join('');
+    document.getElementById('table-kalkulator').innerHTML =
+      `<thead><tr class="text-left text-xs text-sumi/50 border-b"><th class="py-2">Produk</th><th class="text-right">Harga Sekarang</th><th class="text-right">Harga Pokok</th><th class="text-right">Harga Saran (+${margin}%)</th><th class="text-right">Keterangan</th></tr></thead><tbody>${rows}</tbody>`;
+  } catch (_) { /* karyawan tidak akses produk — abaikan */ }
+}
+document.getElementById('kalk-hitung')?.addEventListener('click', hitungHargaJual);
+document.getElementById('kalk-hpp')?.addEventListener('input', (e) => { e.target.dataset.auto = '0'; });
 
 // ---------- Pengaturan Web ----------
 async function loadPengaturan() {

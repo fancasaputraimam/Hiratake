@@ -9,7 +9,23 @@
 ## URL
 - **Sandbox (Development)**: https://3000-imf9wlpmbjc80capbwebr-5185f4aa.sandbox.novita.ai
 - **Login Pengelola**: /login
-- **Produksi**: Belum di-deploy
+- **GitHub**: https://github.com/fancasaputraimam/Hiratake
+- **Produksi**: Belum di-deploy (pilih: Cloudflare Pages hosted/BYOK, atau VPS via `install-vps.sh`)
+
+## 🚀 Pasang di VPS (1 Perintah)
+Untuk VPS Ubuntu/Debian (20.04+), jalankan:
+```bash
+curl -fsSL https://raw.githubusercontent.com/fancasaputraimam/Hiratake/main/install-vps.sh | bash
+```
+Skrip otomatis: pasang Node.js 20 → clone repo → install → build → migrasi database → jalankan via PM2 (auto-start saat reboot) → pasang Nginx di port 80.
+
+Opsi (variabel lingkungan sebelum perintah):
+```bash
+# Contoh: pakai domain + port lain, tanpa nginx
+DOMAIN=jamurku.com PORT=3000 PAKAI_NGINX=1 bash install-vps.sh
+```
+Setelah selesai: buka `http://IP-VPS-ANDA` → login → **segera ganti sandi** lewat ikon 🔑.
+Update versi baru: `cd /opt/hiratake && git pull && npm install && npm run build && pm2 restart hiratake`
 
 ## Akun Default (GANTI PASSWORD!)
 | Username | Password | Peran |
@@ -50,6 +66,9 @@
 - ✅ **Target produksi bulanan**: diatur di Pengaturan, progress bar berwarna di dashboard (merah <60%, emas <100%, hijau ≥100%)
 - ✅ **PWA manifest** + theme-color — bisa "Add to Home Screen" di HP
 - ✅ **Template WA diperkaya**: pesan tagihan mencantumkan sisa piutang, pesan pesanan mencantumkan kode/total/status/tanggal kirim
+- ✅ **Grafik tren antar-bulan** (tab Laporan): omzet vs pengeluaran vs laba + panen kg & HPP/kg, pilihan 6/12/24 bulan terakhir
+- ✅ **Kalkulator harga jual** (tab Laporan): HPP/kg otomatis dari laporan + margin % (default 15%) → harga jual saran per kg dibulatkan ke Rp 500, plus tabel per produk (harga sekarang vs harga pokok vs harga saran + rekomendasi naikkan/pas)
+- ✅ **Pemasangan VPS 1-file** (`install-vps.sh`): Node 20 + clone + build + migrasi + PM2 autostart + Nginx, cukup 1 perintah curl
 
 ## Aturan Anti-Miss yang Ditanam di Sistem
 1. Kejadian baglog tidak boleh melebihi sisa baglog batch
@@ -113,6 +132,7 @@
 | `/api/admin/audit` | GET | owner | 200 aktivitas terakhir |
 | `/api/admin/nota/:jenis/:id` | GET | semua | Data nota (penjualan/pesanan) |
 | `/nota/:jenis/:id` | GET | semua (login) | Halaman nota siap cetak/PDF |
+| `/api/admin/tren?n=6\|12\|24` | GET | owner, admin | Tren bulanan: omzet, pengeluaran, laba, panen kg, HPP/kg |
 
 ### Rumus Laporan
 - **Omzet** = total penjualan bulan itu (basis akrual, termasuk tempo)
@@ -126,8 +146,7 @@
 - **Migrasi**: `migrations/0001_initial_schema.sql` … `migrations/0005_fitur_lanjutan.sql`
 
 ## Belum Diimplementasikan (Fase Berikutnya)
-- ❌ Deploy produksi ke Cloudflare Pages (menunggu pilihan: hosted Genspark vs akun Cloudflare sendiri)
-- ❌ Grafik tren antar-bulan di Laporan
+- ❌ Deploy produksi ke Cloudflare Pages (menunggu pilihan: hosted Genspark vs akun Cloudflare sendiri) — alternatif VPS sudah tersedia via `install-vps.sh`
 - ❌ Pagination tabel (saat ini limit + filter bulan sudah memadai untuk volume kecil)
 - ❌ Tailwind build lokal (masih CDN)
 - ❌ Galeri foto kumbung asli (butuh foto dari pemilik)
@@ -161,4 +180,4 @@
 - **UI Form**: semua form tambah/edit berupa modal popup (bottom-sheet di HP, tutup via ✕ / klik luar / Esc)
 - **Data**: 100% asli dari input pengguna — seed hanya berisi akun default & katalog produk, tanpa data transaksi contoh; statistik landing selalu sinkron dengan database
 - **Keamanan**: password hash (salt+SHA-256), sesi 7 hari + pembersihan otomatis, rate-limit login, audit trail, role-gating semua endpoint, PWA-ready
-- **Terakhir Diperbarui**: 2026-08-28 (Fase 4: notifikasi, cicilan piutang, pesanan online publik, ekspor CSV, audit trail, nota cetak, target produksi, ganti sandi, rate-limit, PWA)
+- **Terakhir Diperbarui**: 2026-08-29 (Tren antar-bulan + kalkulator harga jual + skrip pasang VPS 1-file + GitHub)

@@ -1030,6 +1030,48 @@ app.get('/api/admin/laporan', requireAuth(['owner', 'admin']), async (c) => {
   })
 })
 
+// Tren antar-bulan: omzet, pengeluaran, laba, panen kg, HPP/kg per bulan (?n=6 bulan terakhir, maks 24)
+app.get('/api/admin/tren', requireAuth(['owner', 'admin']), async (c) => {
+  const db = c.env.DB
+  let n = parseInt(c.req.query('n') || '6', 10)
+  if (isNaN(n) || n < 2) n = 6
+  if (n > 24) n = 24
+
+  // Daftar bulan N terakhir (termasuk bulan berjalan), urut lama → baru
+  const bulanList: string[] = []
+  const now = new Date()
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    bulanList.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  const awal = bulanList[0]
+
+  const [omzet, pengeluaran, pemasukanLain, panen, baglog] = await Promise.all([
+    db.prepare(`SELECT strftime('%Y-%m',tanggal) b, COALESCE(SUM(total),0) v FROM penjualan WHERE strftime('%Y-%m',tanggal)>=? GROUP BY b`).bind(awal).all(),
+    db.prepare(`SELECT strftime('%Y-%m',tanggal) b, COALESCE(SUM(jumlah),0) v FROM pengeluaran WHERE strftime('%Y-%m',tanggal)>=? GROUP BY b`).bind(awal).all(),
+    db.prepare(`SELECT strftime('%Y-%m',tanggal) b, COALESCE(SUM(jumlah),0) v FROM pemasukan_lain WHERE strftime('%Y-%m',tanggal)>=? GROUP BY b`).bind(awal).all(),
+    db.prepare(`SELECT strftime('%Y-%m',tanggal) b, COALESCE(SUM(jumlah_kg),0) v FROM panen WHERE strftime('%Y-%m',tanggal)>=? GROUP BY b`).bind(awal).all(),
+    db.prepare(`SELECT strftime('%Y-%m',tanggal) b, COALESCE(SUM(jumlah*biaya_per_baglog),0) v FROM baglog_batch WHERE strftime('%Y-%m',tanggal)>=? GROUP BY b`).bind(awal).all(),
+  ])
+  const peta = (rs: any) => Object.fromEntries((rs.results as any[]).map((r) => [r.b, r.v]))
+  const mO = peta(omzet), mP = peta(pengeluaran), mL = peta(pemasukanLain), mK = peta(panen), mB = peta(baglog)
+
+  const data = bulanList.map((b) => {
+    const o = mO[b] || 0, p = mP[b] || 0, l = mL[b] || 0, kg = mK[b] || 0, inv = mB[b] || 0
+    return {
+      bulan: b,
+      omzet: o,
+      pemasukanLain: l,
+      pengeluaran: p,
+      investasiBaglog: inv,
+      laba: o + l - p,
+      panenKg: kg,
+      hppPerKg: kg > 0 ? Math.round((p + inv) / kg) : 0,
+    }
+  })
+  return c.json({ data })
+})
+
 // ============ FASE 3: STOK HARIAN + REKONSILIASI ============
 
 const JENIS_PENYESUAIAN = ['rusak', 'bonus', 'sampel', 'konsumsi', 'koreksi', 'lainnya']
