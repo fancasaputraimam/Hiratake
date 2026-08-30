@@ -6,11 +6,6 @@
 - **Alur data**: Batch Baglog → Kejadian (kontaminasi) → Panen (grade A/B/C + susut) → Pesanan/PO → Penjualan (pelanggan + lunas/tempo) → Piutang → Stok/Rekonsiliasi → Keuangan → Laporan Laba/Rugi + HPP
 - **Responsive**: seluruh halaman (landing, login, dashboard) optimal di HP & laptop
 
-## URL
-- **Sandbox (Development)**: https://3000-ij8gxke43gb02nz2vj979-de59bda9.sandbox.novita.ai
-- **Login Pengelola**: /login
-- **Produksi**: https://webapp-a9l.pages.dev ✅ (Cloudflare Pages, akun sendiri/BYOK)
-
 ## Akun Default (GANTI PASSWORD!)
 | Username | Password | Peran |
 |----------|----------|-------|
