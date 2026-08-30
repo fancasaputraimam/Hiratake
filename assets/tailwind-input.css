@@ -1,0 +1,18 @@
+/* ============================================================
+   Sumber CSS Tailwind — dibangun menjadi public/static/tailwind.css
+   Perintah: npm run build:css   (otomatis dijalankan oleh npm run build)
+
+   Tujuan: menghapus ketergantungan pada https://cdn.tailwindcss.com
+   (±300 KB JS yang memblokir render + peringatan "not for production").
+   ============================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Warna tema (vermillion) tetap bisa diganti owner dari dashboard.
+   Nilai default; halaman menimpanya lewat <style>:root{...}</style>. */
+:root {
+  --vermillion: #C73E3A;
+  --vermillion-rgb: 199 62 58;
+}

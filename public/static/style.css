@@ -1,0 +1,671 @@
+/* ===== Hiratake — Gaya Jepang ===== */
+
+/* Pola seigaiha (gelombang laut Jepang) halus */
+.seigaiha-bg {
+  background-color: #F7F3EA;
+  background-image: radial-gradient(circle at 100% 150%, #F7F3EA 24%, #EFE8D8 25%, #EFE8D8 28%, #F7F3EA 29%, #F7F3EA 36%, #EFE8D8 36%, #EFE8D8 40%, transparent 40%, transparent),
+    radial-gradient(circle at 0 150%, #F7F3EA 24%, #EFE8D8 25%, #EFE8D8 28%, #F7F3EA 29%, #F7F3EA 36%, #EFE8D8 36%, #EFE8D8 40%, transparent 40%, transparent),
+    radial-gradient(circle at 50% 100%, #EFE8D8 10%, #F7F3EA 11%, #F7F3EA 23%, #EFE8D8 24%, #EFE8D8 30%, #F7F3EA 31%, #F7F3EA 43%, #EFE8D8 44%, #EFE8D8 50%, #F7F3EA 51%, #F7F3EA 63%, #EFE8D8 64%, #EFE8D8 71%, transparent 71%, transparent);
+  background-size: 100px 50px;
+}
+
+/* Cincin enso di hero */
+.enso-ring {
+  position: relative;
+}
+.enso-ring::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border: 3px solid rgba(199, 62, 58, 0.35);
+  border-radius: 50%;
+  border-top-color: transparent;
+  transform: rotate(-30deg);
+}
+
+/* Teks vertikal ala Jepang */
+.vertical-text {
+  writing-mode: vertical-rl;
+}
+
+/* Animasi mengambang logo */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+.float-anim { animation: floaty 5s ease-in-out infinite; }
+
+/* Animasi fade-up saat scroll */
+.fade-up {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.fade-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Kartu keunggulan */
+.feature-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  padding: 1.75rem;
+  transition: transform 0.3s ease, background 0.3s ease;
+}
+.feature-card:hover {
+  transform: translateY(-6px);
+  background: rgba(199, 62, 58, 0.15);
+}
+.feature-card i {
+  font-size: 1.8rem;
+  color: #C9A227;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+.feature-card h3 {
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 0.4rem;
+}
+.feature-card p {
+  font-size: 0.85rem;
+  color: rgba(247, 243, 234, 0.7);
+  line-height: 1.6;
+}
+
+/* Langkah proses */
+.process-step {
+  background: #F7F3EA;
+  border-radius: 1rem;
+  padding: 1.75rem;
+  position: relative;
+  box-shadow: 0 4px 16px rgba(43, 43, 43, 0.06);
+  transition: transform 0.3s ease;
+}
+.process-step:hover { transform: translateY(-6px); }
+.process-step .step-num {
+  font-family: 'Noto Serif JP', serif;
+  font-size: 2.4rem;
+  color: #C73E3A;
+  font-weight: 700;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.process-step h3 {
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+.process-step p {
+  font-size: 0.85rem;
+  color: rgba(43, 43, 43, 0.65);
+  line-height: 1.6;
+}
+
+/* Kartu produk (dibuat oleh app.js) */
+.product-card {
+  background: #fff;
+  border-radius: 1.25rem;
+  padding: 1.75rem;
+  box-shadow: 0 6px 24px rgba(43, 43, 43, 0.08);
+  border: 1px solid rgba(43, 43, 43, 0.05);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.product-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 14px 36px rgba(199, 62, 58, 0.15);
+}
+.product-card .badge {
+  position: absolute;
+  top: 1rem;
+  right: -2.2rem;
+  background: #C73E3A;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 2.5rem;
+  transform: rotate(45deg);
+}
+.product-card .p-icon {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 9999px;
+  background: rgba(199, 62, 58, 0.1);
+  color: #C73E3A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+}
+
+/* Galeri */
+.gallery-img {
+  width: 100%;
+  height: 13rem;
+  object-fit: cover;
+  border-radius: 1rem;
+  box-shadow: 0 4px 14px rgba(43, 43, 43, 0.1);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+  cursor: pointer;
+}
+.gallery-img:hover {
+  transform: scale(1.03);
+  box-shadow: 0 10px 28px rgba(43, 43, 43, 0.2);
+}
+
+/* Form */
+.form-input {
+  width: 100%;
+  border: 1px solid rgba(43, 43, 43, 0.15);
+  border-radius: 0.75rem;
+  padding: 0.7rem 1rem;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-size: 0.9rem;
+}
+.form-input:focus {
+  border-color: #C73E3A;
+  box-shadow: 0 0 0 3px rgba(199, 62, 58, 0.12);
+}
+
+/* Kartu kontak */
+.contact-card {
+  background: #F7F3EA;
+  border-radius: 1rem;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 14px rgba(43, 43, 43, 0.06);
+}
+.contact-card i { font-size: 1.6rem; }
+.contact-card h3 { font-weight: 600; font-size: 0.95rem; }
+.contact-card p { font-size: 0.85rem; color: rgba(43, 43, 43, 0.6); }
+
+/* Tombol sosial footer */
+.social-btn {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 9999px;
+  background: rgba(247, 243, 234, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+.social-btn:hover {
+  background: #C73E3A;
+  color: #fff;
+  transform: translateY(-3px);
+}
+
+/* ===== Dashboard Admin — Sidebar ===== */
+.sidebar {
+  position: fixed;
+  top: 4rem; /* di bawah header 64px */
+  left: 0;
+  bottom: 0;
+  width: 15rem;
+  z-index: 45;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  transition: transform 0.25s ease;
+  box-shadow: 4px 0 18px rgba(0, 0, 0, 0.12);
+}
+.sidebar-group {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(201, 162, 39, 0.85);
+  padding: 0.9rem 0.85rem 0.25rem;
+  user-select: none;
+}
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.875rem;
+  border-radius: 0.6rem;
+  color: rgba(247, 243, 234, 0.65);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.tab-btn i { width: 1.25rem; text-align: center; font-size: 0.95rem; }
+.tab-btn:hover { color: #F7F3EA; background: rgba(255, 255, 255, 0.07); }
+.tab-btn.active {
+  color: #fff;
+  background: #C73E3A;
+  font-weight: 600;
+  box-shadow: 0 3px 10px rgba(199, 62, 58, 0.35);
+}
+
+/* ===== Modal ===== */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(20, 20, 20, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4.5rem 1rem 2rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.modal.hidden { display: none; }
+.modal-box {
+  position: relative;
+  background: #fff;
+  border-radius: 1.25rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 30rem;
+  padding: 1.75rem 1.5rem 1.5rem;
+  animation: modalIn 0.22s ease;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-close {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.8rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9999px;
+  background: rgba(43, 43, 43, 0.06);
+  color: rgba(43, 43, 43, 0.55);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.modal-close:hover { background: #C73E3A; color: #fff; }
+@media (max-width: 640px) {
+  .modal { padding: 1rem 0.75rem; align-items: flex-end; }
+  .modal-box { max-width: 100%; border-radius: 1.25rem 1.25rem 0 0; max-height: 88vh; overflow-y: auto; }
+}
+
+/* Tombol tambah di atas tabel */
+.btn-tambah, .btn-tambah-kin, .btn-tambah-matcha {
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.55rem 1.15rem;
+  border-radius: 9999px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+  transition: filter 0.2s ease, transform 0.15s ease;
+  white-space: nowrap;
+}
+.btn-tambah { background: #C73E3A; }
+.btn-tambah-kin { background: #C9A227; }
+.btn-tambah-matcha { background: #7A8450; }
+.btn-tambah:hover, .btn-tambah-kin:hover, .btn-tambah-matcha:hover { filter: brightness(0.9); transform: translateY(-1px); }
+
+/* Konten utama: beri ruang untuk header & sidebar */
+.main-content { margin-top: 4rem; }
+@media (min-width: 1024px) {
+  .main-content { margin-left: 15rem; }
+  .sidebar { transform: none !important; } /* selalu terlihat di laptop */
+}
+@media (max-width: 1023.98px) {
+  .sidebar { transform: translateX(-100%); } /* tersembunyi di HP */
+  .sidebar.open { transform: translateX(0); }
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.25rem;
+  box-shadow: 0 4px 14px rgba(43, 43, 43, 0.06);
+}
+.stat-card i { font-size: 1.4rem; display: block; margin-bottom: 0.5rem; }
+.stat-card .stat-val { font-family: 'Noto Serif JP', serif; font-size: 1.3rem; font-weight: 700; }
+.stat-card .stat-label { font-size: 0.75rem; color: rgba(43, 43, 43, 0.5); }
+
+.data-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(43, 43, 43, 0.45);
+  padding: 0.5rem 0.6rem;
+  border-bottom: 2px solid rgba(43, 43, 43, 0.08);
+}
+.data-table td {
+  padding: 0.6rem;
+  border-bottom: 1px solid rgba(43, 43, 43, 0.06);
+  vertical-align: top;
+}
+.data-table tbody tr:hover { background: rgba(199, 62, 58, 0.03); }
+
+/* ===== Responsive HP / Tablet ===== */
+
+/* KUNCI: anak grid/flex bawaan punya min-width auto sehingga tabel lebar
+   mendorong seluruh halaman melebar di HP. Paksa boleh menyusut agar
+   scroll terjadi DI DALAM kartu (overflow-x-auto), bukan di seluruh layar. */
+.grid > *, .flex > * { min-width: 0; }
+.form-input { min-width: 0; }
+main { overflow-x: hidden; }
+
+/* Scroll horizontal halus untuk tabel di layar sentuh */
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 640px) {
+  /* Tabel data: paksa lebar minimum agar bisa di-scroll ke samping, bukan berantakan */
+  .data-table { min-width: 560px; }
+  /* Tabel lebar (rekonsiliasi stok 7 kolom) butuh ruang lebih */
+  #table-stok { min-width: 620px; }
+  /* Tabel ramping tidak perlu dipaksa lebar */
+  #table-penyesuaian, #table-pemasukan, #table-pesanan-item { min-width: 460px; }
+  .data-table th { padding: 0.45rem 0.4rem; font-size: 0.68rem; }
+  .data-table td { padding: 0.5rem 0.4rem; font-size: 0.8rem; }
+  .data-table td, .data-table th { white-space: nowrap; }
+  .data-table td span, .data-table td .text-xs { white-space: normal; }
+
+  /* Kartu statistik lebih ringkas */
+  .stat-card { padding: 0.85rem; border-radius: 0.85rem; }
+  .stat-card i { font-size: 1.15rem; margin-bottom: 0.35rem; }
+  .stat-card .stat-val { font-size: 1.02rem; }
+  .stat-card .stat-label { font-size: 0.68rem; }
+
+  /* Cegah zoom otomatis iOS saat fokus input (font < 16px memicu zoom) */
+  .form-input { font-size: 16px; padding: 0.65rem 0.9rem; }
+
+  /* Kartu-kartu landing lebih ramping */
+  .feature-card, .process-step { padding: 1.25rem; }
+  .product-card { padding: 1.35rem; }
+  .gallery-img { height: 9.5rem; }
+  .contact-card { padding: 1rem 1.1rem; }
+
+  /* Toast tidak mepet layar */
+  #toast { width: calc(100% - 2rem); max-width: 24rem; text-align: center; }
+}
+
+/* Tombol aksi di tabel: area sentuh lebih besar di perangkat sentuh */
+@media (pointer: coarse) {
+  .data-table button, .data-table a { padding: 0.3rem; display: inline-block; }
+}
+
+/* ===== Badge notifikasi di sidebar ===== */
+.nav-badge {
+  margin-left: auto;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 9999px;
+  background: #C73E3A;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-badge-kin { background: #C9A227; }
+
+/* ===== Sub-navigasi tab WhatsApp ===== */
+.wa-sub-btn,
+.bayar-sub-btn {
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.45rem 1.1rem;
+  border-radius: 9999px;
+  background: #fff;
+  color: #2B2B2B;
+  border: 1px solid rgba(43, 43, 43, 0.12);
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+.wa-sub-btn:hover,
+.bayar-sub-btn:hover { background: #F7F3EA; }
+.wa-sub-btn.active,
+.bayar-sub-btn.active {
+  background: #C73E3A;
+  color: #fff;
+  border-color: #C73E3A;
+}
+
+/* Lencana status koneksi WhatsApp */
+.wa-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+}
+.wa-pill-ok    { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+.wa-pill-warn  { background: rgba(201, 162, 39, 0.16); color: #92700f; }
+.wa-pill-off   { background: rgba(199, 62, 58, 0.12); color: #C73E3A; }
+
+/* Kartu template pesan */
+.wa-tpl-kartu {
+  border: 1px solid rgba(43, 43, 43, 0.1);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+  background: #fff;
+  transition: box-shadow 0.2s ease;
+}
+.wa-tpl-kartu:hover { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07); }
+.wa-tpl-isi {
+  font-size: 0.72rem;
+  color: rgba(43, 43, 43, 0.6);
+  white-space: pre-wrap;
+  max-height: 4.5rem;
+  overflow: hidden;
+  font-family: ui-monospace, monospace;
+}
+
+/* ============================================================
+   FASE 8 — Checkout pelanggan (kartu produk, stepper, metode)
+   ============================================================ */
+
+/* Indikator langkah */
+.ck-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(43, 43, 43, 0.35);
+  transition: color 0.25s ease;
+}
+.ck-step::before {
+  content: attr(data-step);
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 9999px;
+  background: rgba(43, 43, 43, 0.08);
+  color: rgba(43, 43, 43, 0.45);
+  font-size: 0.7rem;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+.ck-step-aktif { color: #2B2B2B; }
+.ck-step-aktif::before {
+  background: var(--vermillion, #C73E3A);
+  color: #fff;
+}
+
+/* Kartu produk yang bisa dipilih */
+.ck-produk {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  border: 1.5px solid rgba(43, 43, 43, 0.1);
+  border-radius: 1rem;
+  padding: 0.75rem 0.9rem;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.ck-produk:hover {
+  border-color: rgba(199, 62, 58, 0.45);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.ck-produk-aktif {
+  border-color: var(--vermillion, #C73E3A);
+  background: rgba(199, 62, 58, 0.04);
+  box-shadow: 0 4px 14px rgba(199, 62, 58, 0.1);
+}
+.ck-produk-ikon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.85rem;
+  background: rgba(122, 132, 80, 0.12);
+  color: #7A8450;
+  font-size: 1.05rem;
+}
+.ck-produk-aktif .ck-produk-ikon {
+  background: rgba(199, 62, 58, 0.12);
+  color: var(--vermillion, #C73E3A);
+}
+
+/* Stepper jumlah */
+.ck-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(43, 43, 43, 0.12);
+  border-radius: 9999px;
+  padding: 0.15rem;
+  background: #fff;
+}
+.ck-qty-btn {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  color: #2B2B2B;
+  background: rgba(43, 43, 43, 0.05);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ck-qty-btn:hover {
+  background: var(--vermillion, #C73E3A);
+  color: #fff;
+}
+.ck-qty-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: rgba(43, 43, 43, 0.05);
+  color: #2B2B2B;
+}
+
+/* Pilihan metode pembayaran */
+.ck-metode {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border: 1.5px solid rgba(43, 43, 43, 0.1);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.ck-metode:hover { border-color: rgba(199, 62, 58, 0.4); }
+.ck-metode:has(input:checked) {
+  border-color: var(--vermillion, #C73E3A);
+  background: rgba(199, 62, 58, 0.04);
+  box-shadow: 0 4px 14px rgba(199, 62, 58, 0.1);
+}
+.ck-metode-mati {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: rgba(43, 43, 43, 0.03);
+}
+.ck-metode-mati:hover { border-color: rgba(43, 43, 43, 0.1); }
+
+/* ============================================================
+   Fase 10 — Testimoni pelanggan di landing page
+   ============================================================ */
+.testi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid rgba(43, 43, 43, 0.08);
+  border-radius: 1.5rem;
+  padding: 1.75rem 1.5rem 1.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.testi-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(199, 62, 58, 0.25);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.09);
+}
+.testi-quote {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  font-size: 1.75rem;
+  color: var(--vermillion, #C73E3A);
+  opacity: 0.12;
+}
+.testi-stars {
+  display: flex;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.85rem;
+}
+.testi-isi {
+  flex: 1;
+  font-size: 0.925rem;
+  line-height: 1.7;
+  color: rgba(43, 43, 43, 0.78);
+  margin-bottom: 1.25rem;
+}
+.testi-isi::before { content: '\201C'; }
+.testi-isi::after { content: '\201D'; }
+.testi-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(43, 43, 43, 0.07);
+}
+.testi-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 9999px;
+  background: rgba(199, 62, 58, 0.1);
+  color: var(--vermillion, #C73E3A);
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 700;
+  font-size: 1rem;
+}
+.testi-nama {
+  display: block;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #2B2B2B;
+}
+.testi-asal {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(43, 43, 43, 0.5);
+}

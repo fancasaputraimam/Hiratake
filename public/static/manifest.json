@@ -1,0 +1,13 @@
+{
+  "name": "Hiratake — Jamur Tiram",
+  "short_name": "Hiratake",
+  "description": "Panel pengelolaan usaha jamur tiram Hiratake",
+  "start_url": "/admin",
+  "display": "standalone",
+  "background_color": "#F7F3EA",
+  "theme_color": "#2B2B2B",
+  "icons": [
+    { "src": "/static/logo-hiratake.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/logo-hiratake.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
