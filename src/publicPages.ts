@@ -215,7 +215,7 @@ export function bayarPage(s: IdentitasSitus): string {
 
     <div id="bayar-error" class="hidden bg-vermillion/10 border border-vermillion/30 rounded-2xl p-5 text-sm">
       <p id="bayar-error-teks"></p>
-      <a href="/checkout" class="inline-block mt-3 text-vermillion font-semibold hover:underline">&larr; Buat pesanan baru</a>
+      <a href="/#produk" class="inline-block mt-3 text-vermillion font-semibold hover:underline">&larr; Buat pesanan baru</a>
     </div>
 
     <div id="bayar-isi" class="hidden grid md:grid-cols-5 gap-6">
@@ -274,7 +274,7 @@ export function bayarPage(s: IdentitasSitus): string {
           <i class="fas fa-circle-xmark text-6xl text-vermillion mb-3"></i>
           <p class="font-serifjp text-xl font-semibold mb-1" id="bayar-gagal-judul">Pembayaran Kedaluwarsa</p>
           <p class="text-sm text-sumi/60 mb-4">Batas waktu pembayaran sudah lewat. Silakan buat pesanan baru.</p>
-          <a href="/checkout" class="inline-block bg-vermillion hover:bg-red-700 text-white px-6 py-2.5 rounded-full transition">Pesan Lagi</a>
+          <a href="/#produk" class="inline-block bg-vermillion hover:bg-red-700 text-white px-6 py-2.5 rounded-full transition">Pesan Lagi</a>
         </div>
       </section>
 

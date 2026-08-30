@@ -103,7 +103,7 @@ export function jsonLdSitus(d: DataJsonLd): string {
         price: Number(p.harga) || 0,
         priceCurrency: 'IDR',
         availability: 'https://schema.org/InStock',
-        url: d.origin + '/checkout',
+        url: d.origin + '/#produk',
         seller: { '@id': url + '#bisnis' },
         ...(p.satuan ? { eligibleQuantity: { '@type': 'QuantitativeValue', unitText: p.satuan } } : {})
       }
@@ -142,13 +142,12 @@ Sitemap: ${origin}/sitemap.xml
 
 /**
  * sitemap.xml sederhana untuk halaman publik.
- * /checkout & /lacak disertakan agar cepat ditemukan Google,
- * meski halaman itu sendiri noindex (fungsional, bukan konten).
+ * /checkout TIDAK disertakan: halaman itu wajib punya ?produk=ID
+ * (pengunjung harus memilih produk dulu), jadi URL telanjangnya selalu redirect.
  */
 export function sitemapXml(origin: string, lastmod: string): string {
   const halaman: { loc: string; prio: string; freq: string }[] = [
     { loc: '/', prio: '1.0', freq: 'daily' },
-    { loc: '/checkout', prio: '0.8', freq: 'weekly' },
     { loc: '/lacak', prio: '0.5', freq: 'monthly' }
   ]
   const urls = halaman.map((h) => `  <url>

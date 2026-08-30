@@ -1596,7 +1596,7 @@ npx wrangler pages secret put OPENWA_WEBHOOK_SECRET</pre>
         <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-credit-card text-vermillion mr-2"></i>Pembayaran &amp; Checkout</h2>
         <div class="flex gap-2">
           <button id="btn-bayar-refresh" class="text-sm border border-sumi/20 hover:bg-washi px-4 py-2 rounded-full transition"><i class="fas fa-rotate mr-1"></i>Segarkan</button>
-          <a href="/checkout" target="_blank" rel="noopener" class="text-sm border border-sumi/20 hover:bg-washi px-4 py-2 rounded-full transition"><i class="fas fa-arrow-up-right-from-square mr-1"></i>Buka Checkout</a>
+          <a href="/#produk" target="_blank" rel="noopener" class="text-sm border border-sumi/20 hover:bg-washi px-4 py-2 rounded-full transition"><i class="fas fa-arrow-up-right-from-square mr-1"></i>Buka Daftar Produk</a>
         </div>
       </div>
 

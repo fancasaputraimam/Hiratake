@@ -33,6 +33,7 @@ module.exports = {
     'text-orange-600', 'text-orange-700', 'text-blue-700', 'text-yellow-700', 'text-purple-700',
     'text-gray-400', 'text-gray-500', 'text-gray-700',
     'border-red-500', 'border-orange-400', 'border-kin',
+    'bg-kin/15', 'border-kin/40', 'text-kin', 'text-sumi/80',
     'opacity-50', 'font-semibold', 'font-bold', 'hidden',
     // Fase 11 — panel Otomatisasi & pemeriksa sistem (warna skor dinamis)
     'bg-amber-50', 'bg-amber-600', 'bg-red-600', 'bg-blue-600',

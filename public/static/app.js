@@ -102,7 +102,36 @@ window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('shadow-md', window.scrollY > 20);
 });
 
+// Pesan pengarahan bila pengunjung mencoba membuka /checkout langsung.
+// Server mengalihkan ke /?pilih=1#produk atau /?produk_tidak_ada=1#produk.
+function tampilkanPesanPilihProduk() {
+  const q = new URLSearchParams(location.search);
+  const kotak = document.getElementById('pilih-produk-dulu');
+  const teks = document.getElementById('pilih-produk-dulu-teks');
+  if (!kotak || !teks) return;
+
+  let isi = '';
+  if (q.get('pilih') === '1') {
+    isi = '<strong>Silakan pilih produk dulu.</strong> Halaman checkout hanya bisa dibuka setelah Anda memilih produk yang diminati di bawah ini.';
+  } else if (q.get('produk_tidak_ada') === '1') {
+    isi = '<strong>Produk tidak tersedia.</strong> Produk yang Anda tuju sudah tidak aktif atau tidak ditemukan. Silakan pilih produk lain di bawah ini.';
+  }
+  if (!isi) return;
+
+  teks.innerHTML = isi;
+  kotak.classList.remove('hidden');
+
+  // Bersihkan query dari address bar agar pesan tidak muncul lagi saat refresh
+  if (window.history.replaceState) {
+    window.history.replaceState({}, '', location.pathname + '#produk');
+  }
+  setTimeout(() => {
+    document.getElementById('produk')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 250);
+}
+
 // Init
 observeFadeUp();
 animateCounters();
 loadProduk();
+tampilkanPesanPilihProduk();

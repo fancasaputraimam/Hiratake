@@ -177,7 +177,7 @@ ${asetCss}
         <li><a href="#proses" class="nav-link hover:text-vermillion transition">Proses</a></li>
         <li><a href="#galeri" class="nav-link hover:text-vermillion transition">Galeri</a></li>
         <li>
-          <a href="${pesananOnlineAktif ? '/checkout' : '#kontak'}" class="bg-vermillion text-white px-5 py-2 rounded-full hover:bg-red-700 transition shadow">
+          <a href="${pesananOnlineAktif ? '#produk' : '#kontak'}" class="bg-vermillion text-white px-5 py-2 rounded-full hover:bg-red-700 transition shadow">
             <i class="fas fa-shopping-basket mr-1"></i> Pesan
           </a>
         </li>
@@ -192,7 +192,7 @@ ${asetCss}
       <a href="#keunggulan" class="block py-2 hover:text-vermillion">Keunggulan</a>
       <a href="#proses" class="block py-2 hover:text-vermillion">Proses</a>
       <a href="#galeri" class="block py-2 hover:text-vermillion">Galeri</a>
-      <a href="${pesananOnlineAktif ? '/checkout' : '#kontak'}" class="block py-2 text-vermillion font-semibold">Pesan Sekarang</a>
+      <a href="${pesananOnlineAktif ? '#produk' : '#kontak'}" class="block py-2 text-vermillion font-semibold">Pesan Sekarang</a>
     </div>
   </header>
 
@@ -208,7 +208,7 @@ ${asetCss}
         </h1>
         <p class="text-sumi/70 mb-8 leading-relaxed">${situsDeskripsi}</p>
         <div class="flex flex-wrap gap-4">
-          <a href="${pesananOnlineAktif ? '/checkout' : '#kontak'}" class="bg-vermillion text-white px-7 py-3 rounded-full font-semibold hover:bg-red-700 transition shadow-lg">
+          <a href="${pesananOnlineAktif ? '#produk' : '#kontak'}" class="bg-vermillion text-white px-7 py-3 rounded-full font-semibold hover:bg-red-700 transition shadow-lg">
             <i class="fas fa-basket-shopping mr-2"></i>Pesan Sekarang
           </a>
           <a href="#produk" class="border-2 border-sumi/20 px-7 py-3 rounded-full font-semibold hover:border-vermillion hover:text-vermillion transition">
@@ -272,6 +272,11 @@ ${asetCss}
         <p class="text-vermillion font-serifjp tracking-[0.3em] text-sm mb-2">商品</p>
         <h2 class="font-serifjp text-3xl md:text-4xl font-bold">Produk Kami</h2>
         <div class="w-16 h-1 bg-vermillion mx-auto mt-4 rounded"></div>
+        <p class="text-sm text-sumi/60 mt-4">Klik produk yang Anda minati untuk mulai memesan.</p>
+      </div>
+      <div id="pilih-produk-dulu" class="hidden mb-8 bg-kin/15 border border-kin/40 rounded-2xl px-5 py-4 text-sm flex items-start gap-3">
+        <i class="fas fa-circle-info text-kin mt-0.5"></i>
+        <p id="pilih-produk-dulu-teks" class="text-sumi/80"></p>
       </div>
       <div id="product-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-7">
         <!-- Diisi oleh app.js -->
@@ -424,7 +429,35 @@ async function identitasSitus(db: D1Database): Promise<IdentitasSitus> {
   }
 }
 
+/**
+ * Halaman checkout — TIDAK bisa diakses langsung.
+ *
+ * Aturan: pelanggan (user/guest/siapa pun) wajib memilih produk lebih dulu
+ * dari daftar produk di landing page. Jalur sahnya adalah
+ * `/checkout?produk=ID` yang dihasilkan saat kartu produk diklik.
+ * Tanpa `?produk=ID` yang valid & aktif, permintaan dialihkan ke daftar produk
+ * supaya tidak ada pesanan kosong / pengunjung nyasar ke form kosong.
+ */
 app.get('/checkout', async (c) => {
+  const mentah = c.req.query('produk') || ''
+  const pid = /^\d{1,9}$/.test(mentah.trim()) ? parseInt(mentah.trim(), 10) : 0
+
+  // 1. Tidak ada parameter produk → wajib pilih produk dulu.
+  if (!pid) {
+    return c.redirect('/?pilih=1#produk', 302)
+  }
+
+  // 2. Parameter ada tapi produknya tidak ada / tidak aktif → tolak juga.
+  const produk = await c.env.DB
+    .prepare('SELECT id FROM produk WHERE id = ? AND aktif = 1')
+    .bind(pid)
+    .first<any>()
+    .catch(() => null)
+
+  if (!produk) {
+    return c.redirect('/?produk_tidak_ada=1#produk', 302)
+  }
+
   return c.html(checkoutPage(await identitasSitus(c.env.DB)))
 })
 

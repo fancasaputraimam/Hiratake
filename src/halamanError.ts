@@ -22,7 +22,7 @@ export function halaman404(sRaw: Situs404, pathDiminta: string): string {
   const warna = warnaValid(sRaw.warna)
   const wa = String(sRaw.wa || '').replace(/[^0-9]/g, '')
   const path = esc(String(pathDiminta || '/').slice(0, 80))
-  const linkPesan = sRaw.pesananOnline ? '/checkout' : `https://wa.me/${wa}`
+  const linkPesan = sRaw.pesananOnline ? '/#produk' : `https://wa.me/${wa}`
 
   return `<!DOCTYPE html>
 <html lang="id">
