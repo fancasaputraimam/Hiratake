@@ -90,8 +90,10 @@ const KUNCI_BAYAR = [
 ]
 
 export async function getBayarConfig(env: BayarEnv): Promise<BayarConfig> {
+  // Ikut mengambil kredensial dari database agar bisa diisi dari dashboard.
   const { results } = await env.DB.prepare(
-    `SELECT key, value FROM pengaturan WHERE key LIKE 'bayar_%'`
+    `SELECT key, value FROM pengaturan
+     WHERE key LIKE 'bayar_%' OR key LIKE 'rahasia_bayar_%'`
   ).all<{ key: string; value: string }>()
   const m: Record<string, string> = {}
   for (const r of results) m[r.key] = r.value
@@ -120,9 +122,10 @@ export async function getBayarConfig(env: BayarEnv): Promise<BayarConfig> {
     ongkir: Math.max(0, num('bayar_ongkir', 0)),
     ongkirGratisMin: Math.max(0, num('bayar_ongkir_gratis_min', 0)),
     instruksiCash: m.bayar_instruksi_cash || 'Bayar tunai saat barang diterima.',
-    serverKey: env.BAYAR_SERVER_KEY || '',
-    clientKey: env.BAYAR_CLIENT_KEY || '',
-    callbackSecret: env.BAYAR_CALLBACK_SECRET || ''
+    // Environment variable diprioritaskan; database sebagai alternatif dari web
+    serverKey: env.BAYAR_SERVER_KEY || m.rahasia_bayar_server_key || '',
+    clientKey: env.BAYAR_CLIENT_KEY || m.rahasia_bayar_client_key || '',
+    callbackSecret: env.BAYAR_CALLBACK_SECRET || m.rahasia_bayar_callback_secret || ''
   }
 }
 

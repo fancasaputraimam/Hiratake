@@ -8,6 +8,7 @@ import {
 // ===== Integrasi OpenWA (WhatsApp API Gateway) =====
 import { waRoutes } from './waRoutes'
 import { getWAConfig, siapKirim, type OpenWAEnv } from './openwa'
+import { saring, itiRahasia } from './rahasia'
 import {
   notifPesananBaru, notifStatusPesanan, notifNota,
   notifCicilan, notifGaji, jalankanPengingatHarian
@@ -1645,7 +1646,8 @@ app.post('/api/admin/pesanan/:id/selesai', requireAuth(), async (c) => {
 // ============ FASE 1: PENGATURAN WEBSITE ============
 
 app.get('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
-  return c.json({ pengaturan: await getPengaturan(c.env.DB) })
+  // `saring` membuang kredensial rahasia sebelum dikirim ke browser
+  return c.json({ pengaturan: saring(await getPengaturan(c.env.DB)) })
 })
 
 app.put('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
@@ -1654,6 +1656,7 @@ app.put('/api/admin/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
   const stmts = []
   for (const [key, value] of Object.entries(body)) {
     if (!kunciDiizinkan.includes(key)) continue
+    if (itiRahasia(key)) continue // sabuk keamanan
     if (key === 'wa_nomor' && !/^\d{9,15}$/.test(String(value))) {
       return c.json({ error: 'Nomor WA harus angka saja diawali kode negara, contoh: 6281234567890' }, 400)
     }

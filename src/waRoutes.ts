@@ -17,6 +17,7 @@ import {
   pesanDariTemplate, rupiah, tanggalID, hariIniWIB
 } from './openwa'
 import { notifPiutang, jalankanPengingatHarian } from './waNotifikasi'
+import { saring, sensorRahasia, sumberRahasia, PETA_RAHASIA, itiRahasia, ambilRahasia } from './rahasia'
 
 export type WABindings = AuthBindings & {
   OPENWA_API_KEY?: string
@@ -40,20 +41,68 @@ const KUNCI_WA = [
 
 waRoutes.get('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT key, value FROM pengaturan WHERE key LIKE 'openwa_%'`
+    `SELECT key, value FROM pengaturan WHERE key LIKE 'openwa_%' OR key LIKE 'rahasia_openwa_%'`
   ).all<{ key: string; value: string }>()
   const map: Record<string, string> = {}
   for (const r of results) map[r.key] = r.value
 
   const cfg = await getWAConfig(c.env as OpenWAEnv)
+  const webhookDB = map.rahasia_openwa_webhook_secret || ''
   return c.json({
-    pengaturan: map,
-    // Nilai rahasia TIDAK pernah dikirim ke browser — hanya status "sudah diisi / belum"
-    apiKeyTerpasang: !!c.env.OPENWA_API_KEY,
-    webhookSecretTerpasang: !!c.env.OPENWA_WEBHOOK_SECRET,
+    // `saring` membuang nilai rahasia — browser hanya menerima status.
+    pengaturan: saring(map),
+    apiKeyTerpasang: !!cfg.apiKey,
+    webhookSecretTerpasang: !!(c.env.OPENWA_WEBHOOK_SECRET || webhookDB),
+    // Dari mana kredensial berasal: 'server' (env) / 'web' (database) / 'kosong'
+    apiKeySumber: sumberRahasia(c.env.OPENWA_API_KEY, map.rahasia_openwa_api_key || ''),
+    webhookSecretSumber: sumberRahasia(c.env.OPENWA_WEBHOOK_SECRET, webhookDB),
+    // Hanya 4 huruf terakhir, untuk memastikan pemilik memasang kunci yang benar
+    apiKeyPetunjuk: sensorRahasia(cfg.apiKey),
+    webhookSecretPetunjuk: sensorRahasia(c.env.OPENWA_WEBHOOK_SECRET || webhookDB),
     siap: siapKirim(cfg),
     webhookUrl: new URL('/api/webhook/openwa', c.req.url).toString()
   })
+})
+
+// ------------------------------------------------------------
+//  Simpan / hapus kredensial dari dashboard — KHUSUS OWNER
+//  Nilainya masuk database dan tidak pernah dikirim balik ke browser.
+// ------------------------------------------------------------
+waRoutes.put('/api/admin/wa/kredensial', requireAuth(['owner']), async (c) => {
+  const body = await c.req.json<Record<string, string>>()
+  const izin: Record<string, string> = {
+    api_key: 'OPENWA_API_KEY',
+    webhook_secret: 'OPENWA_WEBHOOK_SECRET'
+  }
+
+  const stmts: any[] = []
+  const diubah: string[] = []
+
+  for (const [medan, namaEnv] of Object.entries(izin)) {
+    if (body[medan] === undefined) continue
+    const nilai = String(body[medan] ?? '').trim()
+    const kunci = PETA_RAHASIA[namaEnv]
+
+    if (nilai === '') {
+      // String kosong = perintah hapus
+      stmts.push(c.env.DB.prepare('DELETE FROM pengaturan WHERE key = ?').bind(kunci))
+      diubah.push(`${medan} dihapus`)
+      continue
+    }
+    if (nilai.length > 500) {
+      return c.json({ error: 'Kredensial terlalu panjang (maksimal 500 karakter).' }, 400)
+    }
+    stmts.push(c.env.DB.prepare(
+      'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).bind(kunci, nilai))
+    diubah.push(`${medan} diperbarui`)
+  }
+
+  if (!stmts.length) return c.json({ error: 'Tidak ada kredensial yang dikirim.' }, 400)
+  await c.env.DB.batch(stmts)
+  // Audit mencatat AKSI-nya saja, bukan nilai kredensialnya
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'wa-kredensial', '-', diubah.join(', '))
+  return c.json({ sukses: true, pesan: 'Kredensial disimpan. Tidak perlu restart server.' })
 })
 
 waRoutes.put('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
@@ -61,6 +110,8 @@ waRoutes.put('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async 
   const stmts: any[] = []
   for (const [key, valueRaw] of Object.entries(body)) {
     if (!KUNCI_WA.includes(key)) continue
+    // Sabuk keamanan tambahan: kredensial tidak boleh lewat endpoint ini
+    if (itiRahasia(key)) continue
     let value = String(valueRaw ?? '').trim()
 
     if (key === 'openwa_url' && value) {
@@ -87,13 +138,13 @@ waRoutes.put('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async 
   if (!stmts.length) return c.json({ error: 'Tidak ada pengaturan yang dikenali.' }, 400)
 
   // Guard: mengaktifkan integrasi tanpa API key hanya akan bikin semua pesan gagal
-  if (body.openwa_aktif === '1' && !c.env.OPENWA_API_KEY) {
-    return c.json({
-      error: 'API key OpenWA belum dipasang di server. ' +
-        'VPS: tambahkan OPENWA_API_KEY di berkas .env lalu pm2 restart hiratake. ' +
-        'Cloudflare: npx wrangler pages secret put OPENWA_API_KEY. ' +
-        'Lokal: isi .dev.vars. Setelah itu aktifkan lagi.'
-    }, 400)
+  if (body.openwa_aktif === '1') {
+    const cfgCek = await getWAConfig(c.env as OpenWAEnv)
+    if (!cfgCek.apiKey) {
+      return c.json({
+        error: 'API key OpenWA belum diisi. Isi kolom "API Key OpenWA" di halaman ini lalu simpan, baru aktifkan.'
+      }, 400)
+    }
   }
 
   await c.env.DB.batch(stmts)
@@ -500,10 +551,13 @@ waRoutes.post('/api/webhook/openwa', async (c) => {
   const raw = await c.req.text()
   const sig = c.req.header('X-OpenWA-Signature') || c.req.header('x-openwa-signature')
 
-  if (!c.env.OPENWA_WEBHOOK_SECRET) {
-    return c.json({ error: 'Webhook belum dikonfigurasi di server (OPENWA_WEBHOOK_SECRET kosong).' }, 503)
+  // Rahasia webhook boleh berasal dari environment (diprioritaskan) atau
+  // dari dashboard. Tanda tangan tetap WAJIB valid — tidak ada jalan pintas.
+  const rahasiaWebhook = await ambilRahasia(c.env.DB, 'OPENWA_WEBHOOK_SECRET', c.env.OPENWA_WEBHOOK_SECRET)
+  if (!rahasiaWebhook) {
+    return c.json({ error: 'Webhook belum dikonfigurasi. Isi "Webhook Secret" di dashboard WhatsApp.' }, 503)
   }
-  if (!(await verifikasiTandaTangan(raw, sig, c.env.OPENWA_WEBHOOK_SECRET))) {
+  if (!(await verifikasiTandaTangan(raw, sig, rahasiaWebhook))) {
     return c.json({ error: 'Tanda tangan webhook tidak valid.' }, 401)
   }
 

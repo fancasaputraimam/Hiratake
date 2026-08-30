@@ -353,13 +353,33 @@ JSON-LD Product 0 → **6** · denyut aktif dari `auto:/` (landing publik) · sk
 - ✅ Aman XSS: `<` dan `>` di-escape di dalam `<script type="application/ld+json">`
 
 ### 🔔 Notifikasi WA & QRIS (catatan #12)
-Fiturnya **sudah selesai sejak Fase 7–8** dan aktif otomatis begitu secret dipasang — tidak perlu ubah kode:
+Fiturnya **sudah selesai sejak Fase 7–8** dan aktif otomatis begitu kredensial diisi — tidak perlu ubah kode.
+
+**Cara termudah (disarankan): isi lewat web, tanpa masuk server.**
+- WhatsApp → Dashboard → tab **WhatsApp** → sub-tab **Konfigurasi** → kolom *API Key OpenWA* & *Webhook Secret* → **Simpan Kredensial**
+- Pembayaran → tab **Pembayaran** → sub-tab **Panduan** → *Server Key / Client Key / Callback Secret* → **Simpan Kredensial**
+
+Berlaku langsung, **tanpa restart server**, dan sama untuk Cloudflare maupun VPS.
+
+**Opsional (lebih ketat): pasang sebagai environment variable server.** Bila diisi di sini, nilainya **menang** atas yang di web dan kolom di web otomatis terkunci.
 ```bash
-npx wrangler pages secret put OPENWA_API_KEY --project-name webapp     # notifikasi & OTP WhatsApp
-npx wrangler pages secret put BAYAR_SERVER_KEY --project-name webapp   # QRIS / payment gateway
+# Cloudflare
+npx wrangler pages secret put OPENWA_API_KEY --project-name webapp
+npx wrangler pages secret put OPENWA_WEBHOOK_SECRET --project-name webapp
+npx wrangler pages secret put BAYAR_SERVER_KEY --project-name webapp
 npx wrangler pages secret put BAYAR_CLIENT_KEY --project-name webapp
 npx wrangler pages secret put BAYAR_CALLBACK_SECRET --project-name webapp
+# VPS → tulis di berkas .env (lihat .env.example), lalu: pm2 restart hiratake
 ```
+
+#### Bagaimana kredensial dari web tetap aman
+| Lapis | Mekanisme |
+|-------|-----------|
+| Hak akses | Endpoint `PUT /api/admin/{wa,bayar}/kredensial` hanya untuk peran **owner** (admin → 403, tanpa login → 401) |
+| Tidak pernah dikirim balik | `saring()` membuang semua kunci `rahasia_*` dari **setiap** respons API; browser hanya menerima status + 4 huruf terakhir (`••••••••1234`) |
+| Anti-injeksi | Endpoint pengaturan umum menolak kunci `rahasia_*` (`itiRahasia()`), jadi kredensial tidak bisa ditimpa lewat jalur lain |
+| Jejak audit | Log aktivitas mencatat *aksinya*, bukan nilainya |
+| Prioritas | Environment variable server selalu menang atas nilai di database |
 
 ## URL Publik Baru (Fase 10)
 | Rute | Keterangan |
@@ -430,14 +450,9 @@ cd /opt/openwa && docker compose -f docker-compose.dev.yml up -d
 Lalu:
 1. Buka dashboard OpenWA (`http://IP-VPS:2785`) → buat **API Key** (hanya tampil sekali)
 2. Buat sesi (mis. `hiratake`) → Start → **scan QR**
-3. Simpan kredensial ke server Hiratake:
-   ```bash
-   # Produksi (Cloudflare)
-   npx wrangler pages secret put OPENWA_API_KEY
-   npx wrangler pages secret put OPENWA_WEBHOOK_SECRET
-   # Lokal / VPS: isi berkas .dev.vars
-   ```
-4. Dashboard Hiratake → tab **WhatsApp** → **Konfigurasi**: isi URL gateway + nama sesi, centang *Aktifkan integrasi*, Simpan, lalu **Uji Kirim**
+3. Simpan kredensial — **cukup dari web**: Dashboard → tab **WhatsApp** → **Konfigurasi** → tempel *API Key OpenWA* & *Webhook Secret* → **Simpan Kredensial**. Berlaku langsung tanpa restart.
+   <br>Opsional bila ingin lebih ketat: pasang sebagai env var server (`OPENWA_API_KEY`, `OPENWA_WEBHOOK_SECRET`) — nilainya menang dan kolom web terkunci.
+4. Di tab yang sama: isi URL gateway + nama sesi, centang *Aktifkan integrasi*, Simpan, lalu **Uji Kirim**
 5. Daftarkan webhook di OpenWA (perintah `curl` siap-tempel tersedia di tab tersebut) dengan `secret` = nilai `OPENWA_WEBHOOK_SECRET`
 
 ### 🚨 Peringatan penting
@@ -610,14 +625,14 @@ Satu adapter provider-agnostik — owner cukup memilih provider di **Dashboard �
 | **Duitku** | API Key | MD5 `merchantCode+amount+merchantOrderId+apiKey` |
 | **Tripay** | Private Key | HMAC-SHA256 atas raw body (`x-callback-signature`) |
 
-**Kredensial disimpan sebagai secret server, tidak pernah masuk database maupun dikirim ke browser.** Endpoint konfigurasi hanya mengembalikan status boolean (`terpasang` / `belum ada`).
+**Kredensial diisi dari web** (tab **Pembayaran** → sub-tab **Panduan**) dan **tidak pernah dikirim balik ke browser** — respons API hanya berisi status (`terpasang` / `belum ada`) plus 4 huruf terakhir sebagai penanda. Endpoint penyimpanannya khusus peran **owner**.
 
 ```bash
-# Produksi (Cloudflare)
-npx wrangler pages secret put BAYAR_SERVER_KEY
+# Opsional, lebih ketat — env var server menang atas nilai di web:
+npx wrangler pages secret put BAYAR_SERVER_KEY      # Cloudflare
 npx wrangler pages secret put BAYAR_CLIENT_KEY
 npx wrangler pages secret put BAYAR_CALLBACK_SECRET
-# Lokal → isi berkas .dev.vars
+# VPS → tulis di berkas .env, lalu: pm2 restart hiratake
 ```
 
 ### Fitur Pendukung Usaha Berbasis OTP WhatsApp

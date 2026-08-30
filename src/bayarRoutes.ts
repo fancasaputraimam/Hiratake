@@ -20,6 +20,7 @@ import {
   getBayarConfig, qrisSiap, hitungBiayaAdmin, hitungOngkir, buatTagihan,
   cekStatusTagihan, verifikasiCallback, kodePembayaran, tokenLacak, sidikCallback
 } from './payment'
+import { saring, sensorRahasia, sumberRahasia, PETA_RAHASIA, itiRahasia } from './rahasia'
 import {
   notifBayarMenunggu, notifBayarLunas, notifBayarInternal, notifTerimaSelesai,
   bersihkanBayarKedaluwarsa, waktuWIB, labelMetode
@@ -646,7 +647,8 @@ bayarRoutes.post('/api/admin/pesanan/:id/terima', requireAuth(), async (c) => {
 
 bayarRoutes.get('/api/admin/bayar/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT key, value FROM pengaturan WHERE key LIKE 'bayar_%' OR key IN ('lacak_aktif','lacak_otp','terima_otp')`
+    `SELECT key, value FROM pengaturan
+     WHERE key LIKE 'bayar_%' OR key LIKE 'rahasia_bayar_%' OR key IN ('lacak_aktif','lacak_otp','terima_otp')`
   ).all<{ key: string; value: string }>()
   const map: Record<string, string> = {}
   for (const r of results) map[r.key] = r.value
@@ -655,7 +657,14 @@ bayarRoutes.get('/api/admin/bayar/pengaturan', requireAuth(['owner', 'admin']), 
   const siap = qrisSiap(cfg)
   const asal = new URL(c.req.url).origin
   return c.json({
-    pengaturan: map,
+    // `saring` membuang nilai kredensial sebelum dikirim ke browser
+    pengaturan: saring(map),
+    // Dari mana kredensial berasal: 'server' (env) / 'web' (database) / 'kosong'
+    serverKeySumber: sumberRahasia(c.env.BAYAR_SERVER_KEY, map.rahasia_bayar_server_key || ''),
+    clientKeySumber: sumberRahasia(c.env.BAYAR_CLIENT_KEY, map.rahasia_bayar_client_key || ''),
+    callbackSecretSumber: sumberRahasia(c.env.BAYAR_CALLBACK_SECRET, map.rahasia_bayar_callback_secret || ''),
+    serverKeyPetunjuk: sensorRahasia(cfg.serverKey),
+    clientKeyPetunjuk: sensorRahasia(cfg.clientKey),
     provider: Object.entries(PROVIDER_INFO).map(([id, i]) => ({ id, ...i })),
     // Kredensial TIDAK dikirim — hanya status terpasang
     serverKeyTerpasang: !!cfg.serverKey,
@@ -665,6 +674,45 @@ bayarRoutes.get('/api/admin/bayar/pengaturan', requireAuth(['owner', 'admin']), 
     qrisAlasan: siap.alasan || '',
     callbackUrl: `${asal}/api/callback/pembayaran`
   })
+})
+
+// ------------------------------------------------------------
+//  Simpan / hapus kredensial gateway dari dashboard — KHUSUS OWNER
+// ------------------------------------------------------------
+bayarRoutes.put('/api/admin/bayar/kredensial', requireAuth(['owner']), async (c) => {
+  const body = await c.req.json<Record<string, string>>()
+  const izin: Record<string, string> = {
+    server_key: 'BAYAR_SERVER_KEY',
+    client_key: 'BAYAR_CLIENT_KEY',
+    callback_secret: 'BAYAR_CALLBACK_SECRET'
+  }
+
+  const stmts: any[] = []
+  const diubah: string[] = []
+
+  for (const [medan, namaEnv] of Object.entries(izin)) {
+    if (body[medan] === undefined) continue
+    const nilai = String(body[medan] ?? '').trim()
+    const kunci = PETA_RAHASIA[namaEnv]
+
+    if (nilai === '') {
+      stmts.push(c.env.DB.prepare('DELETE FROM pengaturan WHERE key = ?').bind(kunci))
+      diubah.push(`${medan} dihapus`)
+      continue
+    }
+    if (nilai.length > 500) {
+      return c.json({ error: 'Kredensial terlalu panjang (maksimal 500 karakter).' }, 400)
+    }
+    stmts.push(c.env.DB.prepare(
+      'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).bind(kunci, nilai))
+    diubah.push(`${medan} diperbarui`)
+  }
+
+  if (!stmts.length) return c.json({ error: 'Tidak ada kredensial yang dikirim.' }, 400)
+  await c.env.DB.batch(stmts)
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'bayar-kredensial', '-', diubah.join(', '))
+  return c.json({ sukses: true, pesan: 'Kredensial disimpan. Tidak perlu restart server.' })
 })
 
 bayarRoutes.put('/api/admin/bayar/pengaturan', requireAuth(['owner']), async (c) => {
@@ -679,6 +727,8 @@ bayarRoutes.put('/api/admin/bayar/pengaturan', requireAuth(['owner']), async (c)
   const stmts: any[] = []
   for (const [key, raw] of Object.entries(body)) {
     if (!izin.includes(key)) continue
+    // Sabuk keamanan: kredensial tidak boleh lewat endpoint ini
+    if (itiRahasia(key)) continue
     let value = String(raw ?? '').trim()
 
     if (boolKunci.includes(key)) {
@@ -720,12 +770,10 @@ bayarRoutes.put('/api/admin/bayar/pengaturan', requireAuth(['owner']), async (c)
   // Guard: QRIS lewat gateway tanpa kredensial hanya akan menggagalkan checkout
   if (body.bayar_qris === '1') {
     const provider = body.bayar_provider || (await cfgVal(c.env.DB, 'bayar_provider', 'manual'))
-    if (provider !== 'manual' && !c.env.BAYAR_SERVER_KEY) {
+    const cfgCek = await getBayarConfig(c.env as BayarEnv)
+    if (provider !== 'manual' && !cfgCek.serverKey) {
       return c.json({
-        error: 'Kredensial gateway belum dipasang di server. ' +
-          'VPS: tambahkan BAYAR_SERVER_KEY di berkas .env lalu pm2 restart hiratake. ' +
-          'Cloudflare: npx wrangler pages secret put BAYAR_SERVER_KEY. ' +
-          'Lokal: isi .dev.vars. Setelah itu aktifkan lagi.'
+        error: 'Kredensial gateway belum diisi. Isi kolom "Server Key" di halaman ini lalu simpan, baru aktifkan QRIS gateway.'
       }, 400)
     }
     if (provider === 'manual') {

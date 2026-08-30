@@ -56,15 +56,19 @@ export function sensorWA(wa: string): string {
 // ---------- Konfigurasi ----------
 
 export async function getWAConfig(env: OpenWAEnv): Promise<WAConfig> {
+  // Sekalian ambil kredensial dari database (bila tidak dipasang di server),
+  // supaya pemilik bisa mengisinya dari dashboard tanpa akses server.
   const { results } = await env.DB.prepare(
-    "SELECT key, value FROM pengaturan WHERE key IN ('openwa_url','openwa_session','openwa_aktif')"
+    `SELECT key, value FROM pengaturan WHERE key IN
+     ('openwa_url','openwa_session','openwa_aktif','rahasia_openwa_api_key')`
   ).all<{ key: string; value: string }>()
   const m: Record<string, string> = {}
   for (const r of results) m[r.key] = r.value
   return {
     url: (m.openwa_url || '').replace(/\/+$/, ''),
     session: m.openwa_session || '',
-    apiKey: env.OPENWA_API_KEY || '',
+    // Environment variable diprioritaskan; database sebagai alternatif dari web
+    apiKey: env.OPENWA_API_KEY || m.rahasia_openwa_api_key || '',
     aktif: m.openwa_aktif === '1'
   }
 }

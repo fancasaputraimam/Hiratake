@@ -2201,12 +2201,35 @@ async function loadWaConfig() {
     cek('wa-cfg-notif-internal', p.openwa_notif_internal);
     cek('wa-cfg-notif-ringkasan', p.openwa_notif_ringkasan);
 
-    document.getElementById('wa-cfg-apikey').innerHTML = d.apiKeyTerpasang
-      ? 'API key: <span class="wa-pill wa-pill-ok">terpasang</span>'
-      : 'API key: <span class="wa-pill wa-pill-off">belum ada</span>';
-    document.getElementById('wa-cfg-secret').innerHTML = d.webhookSecretTerpasang
-      ? 'Webhook secret: <span class="wa-pill wa-pill-ok">terpasang</span>'
-      : 'Webhook secret: <span class="wa-pill wa-pill-off">belum ada</span>';
+    // Status kredensial + dari mana asalnya. Bila dipasang di server (env),
+    // kolom input dikunci karena nilai server selalu menang.
+    const statusKredensial = (idTeks, idInput, label, terpasang, sumber, petunjuk) => {
+      const teks = document.getElementById(idTeks);
+      const input = document.getElementById(idInput);
+      if (!teks) return;
+      if (sumber === 'server') {
+        teks.innerHTML = label + ': <span class="wa-pill wa-pill-ok">terpasang di server</span> ' +
+          '<span class="text-sumi/50">' + (petunjuk || '') + ' — diatur lewat environment, kolom ini dinonaktifkan</span>';
+        if (input) { input.disabled = true; input.placeholder = 'dikelola di server (environment variable)'; }
+      } else if (sumber === 'web') {
+        teks.innerHTML = label + ': <span class="wa-pill wa-pill-ok">tersimpan</span> ' +
+          '<span class="text-sumi/50">' + (petunjuk || '') + ' — kosongkan lalu simpan untuk mengganti</span>';
+        if (input) { input.disabled = false; input.placeholder = 'sudah tersimpan — isi untuk mengganti'; }
+      } else {
+        teks.innerHTML = label + ': <span class="wa-pill wa-pill-off">belum ada</span>';
+        if (input) { input.disabled = false; input.placeholder = 'tempel ' + label.toLowerCase() + ' di sini'; }
+      }
+    };
+    statusKredensial('wa-cfg-apikey', 'wa-in-apikey', 'API key',
+      d.apiKeyTerpasang, d.apiKeySumber, d.apiKeyPetunjuk);
+    statusKredensial('wa-cfg-secret', 'wa-in-secret', 'Webhook secret',
+      d.webhookSecretTerpasang, d.webhookSecretSumber, d.webhookSecretPetunjuk);
+
+    const bisaUbah = d.apiKeySumber !== 'server' || d.webhookSecretSumber !== 'server';
+    const btnSimpan = document.getElementById('wa-simpan-kredensial');
+    const btnHapus = document.getElementById('wa-hapus-kredensial');
+    if (btnSimpan) btnSimpan.disabled = !bisaUbah;
+    if (btnHapus) btnHapus.disabled = !bisaUbah;
 
     // Perintah siap-tempel untuk mendaftarkan webhook di OpenWA
     const cmd = document.getElementById('wa-cfg-webhook-cmd');
@@ -2223,6 +2246,87 @@ async function loadWaConfig() {
     }
   } catch (ex) { toast(ex.message, false); }
 }
+
+// ---------- Kredensial OpenWA: simpan / hapus / lihat ----------
+(() => {
+  const info = (teks, ok) => {
+    const el = document.getElementById('wa-kredensial-info');
+    if (!el) return;
+    el.textContent = teks;
+    el.className = 'text-xs ' + (ok ? 'text-matcha' : 'text-vermillion');
+  };
+
+  // Tombol mata: tampilkan/sembunyikan isi kolom
+  [['wa-lihat-apikey', 'wa-in-apikey'], ['wa-lihat-secret', 'wa-in-secret']].forEach(([idBtn, idIn]) => {
+    const btn = document.getElementById(idBtn);
+    const input = document.getElementById(idIn);
+    if (!btn || !input) return;
+    btn.addEventListener('click', () => {
+      const lihat = input.type === 'password';
+      input.type = lihat ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', String(lihat));
+      btn.innerHTML = '<i class="fas ' + (lihat ? 'fa-eye-slash' : 'fa-eye') + ' text-sm"></i>';
+    });
+  });
+
+  document.getElementById('wa-simpan-kredensial')?.addEventListener('click', async (ev) => {
+    const apikey = document.getElementById('wa-in-apikey');
+    const secret = document.getElementById('wa-in-secret');
+    const body = {};
+    if (apikey && !apikey.disabled && apikey.value.trim()) body.api_key = apikey.value.trim();
+    if (secret && !secret.disabled && secret.value.trim()) body.webhook_secret = secret.value.trim();
+
+    if (!Object.keys(body).length) { info('Isi dulu kolom yang ingin disimpan.', false); return; }
+
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    info('Menyimpan…', true);
+    try {
+      const r = await fetch('/api/admin/wa/kredensial', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Gagal menyimpan kredensial.');
+      // Kosongkan kolom supaya nilai rahasia tidak tertinggal di layar
+      if (apikey) apikey.value = '';
+      if (secret) secret.value = '';
+      info(d.pesan || 'Kredensial disimpan.', true);
+      toast('Kredensial disimpan — tidak perlu restart server.', true);
+      if (typeof loadWaConfig === 'function') loadWaConfig();
+    } catch (ex) {
+      info(ex.message, false);
+      toast(ex.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('wa-hapus-kredensial')?.addEventListener('click', async (ev) => {
+    if (!confirm('Hapus API key & webhook secret OpenWA?\n\nIntegrasi WhatsApp akan berhenti mengirim pesan sampai kredensial diisi lagi.')) return;
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    info('Menghapus…', true);
+    try {
+      const r = await fetch('/api/admin/wa/kredensial', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: '', webhook_secret: '' })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Gagal menghapus kredensial.');
+      info('Kredensial dihapus.', true);
+      toast('Kredensial dihapus.', true);
+      if (typeof loadWaConfig === 'function') loadWaConfig();
+    } catch (ex) {
+      info(ex.message, false);
+      toast(ex.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
 
 document.getElementById('form-wa-config')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2364,6 +2468,28 @@ async function loadBayarConfig() {
     document.getElementById('bayar-cfg-clientkey').innerHTML = 'Client key: ' + pill(d.clientKeyTerpasang);
     document.getElementById('bayar-cfg-callbacksecret').innerHTML = 'Callback secret: ' + pill(d.callbackSecretTerpasang);
     set('bayar-cfg-callback-url', d.callbackUrl || '');
+
+    // Status + kunci kolom bila kredensial dipasang lewat environment server
+    const stBayar = (idTeks, idInput, label, sumber, petunjuk) => {
+      const teks = document.getElementById(idTeks);
+      const input = document.getElementById(idInput);
+      if (!teks) return;
+      if (sumber === 'server') {
+        teks.innerHTML = label + ': <span class="wa-pill wa-pill-ok">terpasang di server</span> ' +
+          '<span class="text-sumi/50">' + (petunjuk || '') + ' — diatur lewat environment, kolom ini dinonaktifkan</span>';
+        if (input) { input.disabled = true; input.placeholder = 'dikelola di server (environment variable)'; }
+      } else if (sumber === 'web') {
+        teks.innerHTML = label + ': <span class="wa-pill wa-pill-ok">tersimpan</span> ' +
+          '<span class="text-sumi/50">' + (petunjuk || '') + ' — isi untuk mengganti</span>';
+        if (input) { input.disabled = false; input.placeholder = 'sudah tersimpan — isi untuk mengganti'; }
+      } else {
+        teks.innerHTML = label + ': <span class="wa-pill wa-pill-off">belum ada</span>';
+        if (input) { input.disabled = false; input.placeholder = 'tempel ' + label.toLowerCase() + ' di sini'; }
+      }
+    };
+    stBayar('bayar-st-server', 'bayar-in-server', 'Server key', d.serverKeySumber, d.serverKeyPetunjuk);
+    stBayar('bayar-st-client', 'bayar-in-client', 'Client key', d.clientKeySumber, d.clientKeyPetunjuk);
+    stBayar('bayar-st-callback', 'bayar-in-callback', 'Callback secret', d.callbackSecretSumber, '');
 
     // Kartu status ringkas
     const prov = (d.provider || []).find((x) => x.id === (p.bayar_provider || 'manual'));
@@ -3371,3 +3497,88 @@ document.getElementById('btn-ekspor')?.addEventListener('click', async () => {
   } catch (e) { toast(e.message, false); }
   b.disabled = false;
 });
+
+// ---------- Kredensial Payment Gateway: simpan / hapus / lihat ----------
+(() => {
+  const info = (teks, ok) => {
+    const el = document.getElementById('bayar-kredensial-info');
+    if (!el) return;
+    el.textContent = teks;
+    el.className = 'text-xs ' + (ok ? 'text-matcha' : 'text-vermillion');
+  };
+
+  [['bayar-lihat-server', 'bayar-in-server'],
+   ['bayar-lihat-client', 'bayar-in-client'],
+   ['bayar-lihat-callback', 'bayar-in-callback']].forEach(([idBtn, idIn]) => {
+    const btn = document.getElementById(idBtn);
+    const input = document.getElementById(idIn);
+    if (!btn || !input) return;
+    btn.addEventListener('click', () => {
+      const lihat = input.type === 'password';
+      input.type = lihat ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', String(lihat));
+      btn.innerHTML = '<i class="fas ' + (lihat ? 'fa-eye-slash' : 'fa-eye') + ' text-sm"></i>';
+    });
+  });
+
+  const medan = [
+    ['bayar-in-server', 'server_key'],
+    ['bayar-in-client', 'client_key'],
+    ['bayar-in-callback', 'callback_secret']
+  ];
+
+  document.getElementById('bayar-simpan-kredensial')?.addEventListener('click', async (ev) => {
+    const body = {};
+    for (const [id, kunci] of medan) {
+      const el = document.getElementById(id);
+      if (el && !el.disabled && el.value.trim()) body[kunci] = el.value.trim();
+    }
+    if (!Object.keys(body).length) { info('Isi dulu kolom yang ingin disimpan.', false); return; }
+
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    info('Menyimpan…', true);
+    try {
+      const r = await fetch('/api/admin/bayar/kredensial', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Gagal menyimpan kredensial.');
+      for (const [id] of medan) { const el = document.getElementById(id); if (el) el.value = ''; }
+      info(d.pesan || 'Kredensial disimpan.', true);
+      toast('Kredensial gateway disimpan — tidak perlu restart server.', true);
+      if (typeof loadBayarConfig === 'function') loadBayarConfig();
+    } catch (ex) {
+      info(ex.message, false);
+      toast(ex.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('bayar-hapus-kredensial')?.addEventListener('click', async (ev) => {
+    if (!confirm('Hapus semua kredensial payment gateway?\n\nPembayaran otomatis akan berhenti sampai kredensial diisi lagi.')) return;
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    info('Menghapus…', true);
+    try {
+      const r = await fetch('/api/admin/bayar/kredensial', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server_key: '', client_key: '', callback_secret: '' })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Gagal menghapus kredensial.');
+      info('Kredensial dihapus.', true);
+      toast('Kredensial gateway dihapus.', true);
+      if (typeof loadBayarConfig === 'function') loadBayarConfig();
+    } catch (ex) {
+      info(ex.message, false);
+      toast(ex.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();

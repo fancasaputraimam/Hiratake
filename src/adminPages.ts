@@ -1615,28 +1615,47 @@ export const adminPage = () => `<!DOCTYPE html>
             <input id="wa-cfg-session" type="text" class="form-input" placeholder="hiratake">
           </div>
 
-          <div class="border-t border-sumi/10 pt-4">
-            <p class="text-sm font-medium mb-2">Status Kredensial Server</p>
-            <div class="grid grid-cols-2 gap-3 text-sm">
-              <p id="wa-cfg-apikey" class="bg-washi rounded-lg px-3 py-2">API key: —</p>
-              <p id="wa-cfg-secret" class="bg-washi rounded-lg px-3 py-2">Webhook secret: —</p>
+          <div class="border-t border-sumi/10 pt-4" id="wa-kredensial-area">
+            <p class="text-sm font-medium mb-1">Kredensial OpenWA</p>
+            <p class="text-xs text-sumi/60 mb-3">Isi di sini lalu simpan — tidak perlu masuk ke server, tidak perlu restart.</p>
+
+            <div class="space-y-3">
+              <div>
+                <label class="form-label" for="wa-in-apikey">API Key OpenWA</label>
+                <div class="flex gap-2">
+                  <input id="wa-in-apikey" type="password" class="form-input flex-1" autocomplete="new-password" placeholder="tempel API key di sini">
+                  <button type="button" id="wa-lihat-apikey" class="px-3 rounded-lg border border-sumi/15 hover:bg-washi" aria-label="Tampilkan API key" aria-pressed="false"><i class="fas fa-eye text-sm"></i></button>
+                </div>
+                <p id="wa-cfg-apikey" class="text-xs mt-1 text-sumi/60">API key: —</p>
+              </div>
+
+              <div>
+                <label class="form-label" for="wa-in-secret">Webhook Secret</label>
+                <div class="flex gap-2">
+                  <input id="wa-in-secret" type="password" class="form-input flex-1" autocomplete="new-password" placeholder="tempel webhook secret di sini">
+                  <button type="button" id="wa-lihat-secret" class="px-3 rounded-lg border border-sumi/15 hover:bg-washi" aria-label="Tampilkan webhook secret" aria-pressed="false"><i class="fas fa-eye text-sm"></i></button>
+                </div>
+                <p id="wa-cfg-secret" class="text-xs mt-1 text-sumi/60">Webhook secret: —</p>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="wa-simpan-kredensial" class="btn-primary text-sm"><i class="fas fa-key mr-1"></i>Simpan Kredensial</button>
+                <button type="button" id="wa-hapus-kredensial" class="text-sm px-3 py-2 rounded-lg border border-sumi/15 hover:bg-washi text-sumi/70"><i class="fas fa-trash mr-1"></i>Hapus</button>
+                <span id="wa-kredensial-info" class="text-xs" role="status"></span>
+              </div>
             </div>
-            <details class="mt-3 text-xs text-sumi/60">
-              <summary class="cursor-pointer font-medium text-vermillion">Cara memasang kredensial (klik)</summary>
+
+            <details class="mt-4 text-xs text-sumi/60">
+              <summary class="cursor-pointer font-medium text-vermillion">Cara mendapatkan kredensial &amp; opsi lanjutan (klik)</summary>
               <div class="mt-2 space-y-2 bg-washi rounded-lg p-3">
-                <p class="text-sumi/70">Semua pengaturan lain di halaman ini bisa diubah langsung dari web.
-                Khusus <strong>dua kunci rahasia</strong> di bawah, demi keamanan hanya bisa dipasang di server —
-                supaya tidak tersimpan di database dan tidak pernah terkirim ke browser. Cukup <strong>sekali pasang</strong>.</p>
-                <p><strong>Bila memakai VPS sendiri:</strong> buka berkas <code>.env</code> di folder aplikasi, isi:</p>
-                <pre class="bg-sumi text-washi p-2 rounded overflow-x-auto text-[11px]">OPENWA_API_KEY=kunci-anda
-OPENWA_WEBHOOK_SECRET=rahasia-anda</pre>
-                <p class="text-sumi/70">lalu jalankan <code>pm2 restart hiratake</code>. Selesai — sisanya dari web.</p>
-                <p><strong>Bila memakai Cloudflare:</strong></p>
-                <pre class="bg-sumi text-washi p-2 rounded overflow-x-auto text-[11px]">npx wrangler pages secret put OPENWA_API_KEY
-npx wrangler pages secret put OPENWA_WEBHOOK_SECRET</pre>
-                <p><strong>Untuk pengembangan lokal:</strong> isi berkas <code>.dev.vars</code> di folder proyek.</p>
-                <p><strong>Terakhir, daftarkan webhook di OpenWA</strong> agar balasan otomatis & OTP jalan:</p>
+                <p><strong>1. API Key</strong> didapat dari pemasangan OpenWA Anda (biasanya diatur saat menjalankan gateway).</p>
+                <p><strong>2. Webhook Secret</strong> Anda tentukan sendiri — teks acak apa pun, minimal 20 karakter. Nilai yang sama dipasang di OpenWA.</p>
+                <p><strong>3. Daftarkan webhook di OpenWA</strong> agar balasan otomatis &amp; OTP jalan:</p>
                 <pre class="bg-sumi text-washi p-2 rounded overflow-x-auto text-[11px]" id="wa-cfg-webhook-cmd"></pre>
+                <p class="pt-2 border-t border-sumi/10"><strong>Opsi lebih aman (opsional):</strong> kredensial boleh dipasang sebagai
+                environment variable di server. Bila diisi di sana, nilainya <strong>menang</strong> atas yang di sini dan kolom di atas
+                otomatis terkunci. Cara: isi <code>OPENWA_API_KEY</code> di berkas <code>.env</code> (VPS) lalu <code>pm2 restart hiratake</code>,
+                atau <code>npx wrangler pages secret put OPENWA_API_KEY</code> (Cloudflare).</p>
               </div>
             </details>
           </div>
@@ -1791,7 +1810,7 @@ npx wrangler pages secret put OPENWA_WEBHOOK_SECRET</pre>
           <p class="text-xs text-sumi/50 bg-washi rounded-lg p-3">
             <i class="fas fa-circle-info mr-1 text-vermillion"></i>
             Sistem ini <strong>universal</strong>: pilih salah satu provider di bawah, sisanya otomatis menyesuaikan.
-            <strong>Kredensial (server key)</strong> disimpan sebagai <em>secret server</em>, tidak pernah lewat halaman ini.
+            <strong>Kredensial (server key dsb.)</strong> diisi di tab <strong>Panduan</strong> pada halaman ini — tidak perlu masuk ke server.
           </p>
 
           <div class="space-y-2 text-sm border border-sumi/10 rounded-xl p-4">
@@ -1846,7 +1865,7 @@ npx wrangler pages secret put OPENWA_WEBHOOK_SECRET</pre>
           </div>
 
           <div class="border-t border-sumi/10 pt-4">
-            <p class="text-sm font-medium mb-2">Status Kredensial Server</p>
+            <p class="text-sm font-medium mb-2">Status Kredensial <span class="text-xs font-normal text-sumi/50">(diisi di tab Panduan)</span></p>
             <div class="grid sm:grid-cols-3 gap-2 text-sm">
               <p id="bayar-cfg-serverkey" class="bg-washi rounded-lg px-3 py-2">Server key: —</p>
               <p id="bayar-cfg-clientkey" class="bg-washi rounded-lg px-3 py-2">Client key: —</p>
@@ -1977,17 +1996,42 @@ npx wrangler pages secret put OPENWA_WEBHOOK_SECRET</pre>
 
           <div>
             <p class="font-medium mb-1"><i class="fas fa-2 text-vermillion mr-2"></i>Otomatis: pakai gateway</p>
-            <p class="text-sumi/70 text-xs leading-relaxed mb-2">Daftar ke salah satu provider, ambil kredensialnya, lalu pasang di server (sekali saja):</p>
-            <p class="text-xs font-medium mb-1">Bila memakai VPS sendiri — isi berkas <code>.env</code>:</p>
-            <pre class="bg-sumi text-washi p-3 rounded-lg overflow-x-auto text-[11px]">BAYAR_SERVER_KEY=kunci-server-anda
-BAYAR_CLIENT_KEY=kunci-client-anda
-BAYAR_CALLBACK_SECRET=rahasia-callback-anda</pre>
-            <p class="text-xs text-sumi/50 mt-1 mb-2">lalu <code>pm2 restart hiratake</code>.</p>
-            <p class="text-xs font-medium mb-1">Bila memakai Cloudflare:</p>
-            <pre class="bg-sumi text-washi p-3 rounded-lg overflow-x-auto text-[11px]">npx wrangler pages secret put BAYAR_SERVER_KEY
-npx wrangler pages secret put BAYAR_CLIENT_KEY
-npx wrangler pages secret put BAYAR_CALLBACK_SECRET</pre>
-            <p class="text-xs text-sumi/50 mt-1">Untuk pengembangan lokal, isi berkas <code>.dev.vars</code>. Kredensial <strong>tidak pernah</strong> disimpan di database maupun dikirim ke browser — itulah sebabnya bagian ini tidak bisa diisi dari web.</p>
+            <p class="text-sumi/70 text-xs leading-relaxed mb-3">Daftar ke salah satu provider, ambil kredensialnya, lalu isi di bawah ini — tidak perlu masuk ke server.</p>
+
+            <div class="space-y-3" id="bayar-kredensial-area">
+              <div>
+                <label class="form-label" for="bayar-in-server">Server Key</label>
+                <div class="flex gap-2">
+                  <input id="bayar-in-server" type="password" class="form-input flex-1" autocomplete="new-password" placeholder="tempel server key di sini">
+                  <button type="button" id="bayar-lihat-server" class="px-3 rounded-lg border border-sumi/15 hover:bg-washi" aria-label="Tampilkan server key" aria-pressed="false"><i class="fas fa-eye text-sm"></i></button>
+                </div>
+                <p id="bayar-st-server" class="text-xs mt-1 text-sumi/60">Server key: —</p>
+              </div>
+              <div>
+                <label class="form-label" for="bayar-in-client">Client Key</label>
+                <div class="flex gap-2">
+                  <input id="bayar-in-client" type="password" class="form-input flex-1" autocomplete="new-password" placeholder="tempel client key di sini">
+                  <button type="button" id="bayar-lihat-client" class="px-3 rounded-lg border border-sumi/15 hover:bg-washi" aria-label="Tampilkan client key" aria-pressed="false"><i class="fas fa-eye text-sm"></i></button>
+                </div>
+                <p id="bayar-st-client" class="text-xs mt-1 text-sumi/60">Client key: —</p>
+              </div>
+              <div>
+                <label class="form-label" for="bayar-in-callback">Callback Secret</label>
+                <div class="flex gap-2">
+                  <input id="bayar-in-callback" type="password" class="form-input flex-1" autocomplete="new-password" placeholder="tempel callback secret di sini">
+                  <button type="button" id="bayar-lihat-callback" class="px-3 rounded-lg border border-sumi/15 hover:bg-washi" aria-label="Tampilkan callback secret" aria-pressed="false"><i class="fas fa-eye text-sm"></i></button>
+                </div>
+                <p id="bayar-st-callback" class="text-xs mt-1 text-sumi/60">Callback secret: —</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="bayar-simpan-kredensial" class="btn-primary text-sm"><i class="fas fa-key mr-1"></i>Simpan Kredensial</button>
+                <button type="button" id="bayar-hapus-kredensial" class="text-sm px-3 py-2 rounded-lg border border-sumi/15 hover:bg-washi text-sumi/70"><i class="fas fa-trash mr-1"></i>Hapus</button>
+                <span id="bayar-kredensial-info" class="text-xs" role="status"></span>
+              </div>
+            </div>
+
+            <p class="text-xs text-sumi/50 mt-3">Nilai kredensial <strong>tidak pernah</strong> dikirim balik ke browser — hanya 4 huruf terakhir untuk memastikan Anda memasang kunci yang benar.
+            Lebih aman lagi (opsional): pasang sebagai environment variable di server (<code>BAYAR_SERVER_KEY</code> dst.); bila diisi di sana, nilainya menang dan kolom di atas terkunci.</p>
           </div>
 
           <div>
