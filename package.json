@@ -11,9 +11,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "build:vps": "npm run build",
     "start": "node server/index.mjs",
-    "start:vps": "node server/index.mjs",
-    "migrasi:vps": "node server/migrasi.mjs",
-    "backup:vps": "node server/backup.mjs"
+    "start:vps": "node server/index.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

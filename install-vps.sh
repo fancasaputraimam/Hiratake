@@ -7,11 +7,12 @@
 #    curl -fsSL https://raw.githubusercontent.com/GANTI_USER/GANTI_REPO/main/install-vps.sh | sudo bash
 #
 #  Yang dilakukan otomatis:
-#   1. Pasang Node.js 20 + git + PM2
+#   1. Pasang Node.js 22 + git + PM2
+#      (WAJIB 22.5+ karena database memakai modul bawaan `node:sqlite`)
 #   2. Clone/salin kode aplikasi ke /opt/hiratake
 #   3. npm install + build
-#   4. Siapkan database SQLite lokal (migrasi + akun default)
-#   5. Jalankan sebagai service PM2 (auto-start saat VPS reboot)
+#   4. Siapkan database SQLite di data/hiratake.sqlite (migrasi + akun default)
+#   5. Jalankan server Node produksi sebagai service PM2 (auto-start saat reboot)
 #   6. (Opsional) pasang Nginx + HTTPS gratis jika DOMAIN diisi
 # ============================================================
 set -euo pipefail
@@ -42,12 +43,34 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl git ca-certificates >/dev/null
 
-if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -c2-3)" -lt 18 ]; then
-  kuning "  Memasang Node.js 20..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+# Aplikasi memakai `node:sqlite` (modul bawaan Node) sebagai database.
+# Modul itu baru tersedia sejak Node 22.5, jadi Node 20 TIDAK cukup.
+node_terlalu_tua() {
+  command -v node >/dev/null 2>&1 || return 0
+  local v major minor
+  v=$(node -v | sed 's/^v//')
+  major=${v%%.*}
+  minor=$(echo "$v" | cut -d. -f2)
+  [ "$major" -lt 22 ] && return 0
+  [ "$major" -eq 22 ] && [ "$minor" -lt 5 ] && return 0
+  return 1
+}
+
+if node_terlalu_tua; then
+  kuning "  Memasang Node.js 22 (wajib >= 22.5 untuk node:sqlite)..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1
   apt-get install -y -qq nodejs >/dev/null
 fi
 hijau "  Node $(node -v), npm $(npm -v)"
+
+# Pastikan benar-benar bisa dipakai — lebih baik gagal di sini daripada
+# aplikasi mati saat start dengan error yang membingungkan.
+if ! node -e "require('node:sqlite')" 2>/dev/null; then
+  merah "  Node $(node -v) tidak punya modul 'node:sqlite'."
+  merah "  Perlu Node 22.5 atau lebih baru. Instalasi dihentikan."
+  exit 1
+fi
+hijau "  Modul node:sqlite tersedia."
 
 command -v pm2 >/dev/null 2>&1 || npm install -g pm2 --silent >/dev/null
 
@@ -79,27 +102,51 @@ npm run build >/dev/null
 hijau "  Build selesai."
 
 # ---------- 4. Database ----------
-kuning "[4/6] Menyiapkan database (migrasi + akun default)..."
-npx wrangler d1 migrations apply webapp-production --local >/dev/null 2>&1
-if [ -f seed.sql ]; then
-  npx wrangler d1 execute webapp-production --local --file=./seed.sql >/dev/null 2>&1
+# Migrasi & akun default dijalankan otomatis oleh server saat start pertama
+# (lihat AUTO_MIGRASI & AUTO_SEED). Di sini hanya menyiapkan folder data
+# beserta file .env supaya konfigurasi mudah diubah nanti.
+kuning "[4/6] Menyiapkan folder data + konfigurasi..."
+mkdir -p "$APP_DIR/data/backup"
+if [ ! -f "$APP_DIR/.env" ]; then
+  cat > "$APP_DIR/.env" <<EOF
+PORT=${PORT}
+HOST=127.0.0.1
+DB_FILE=data/hiratake.sqlite
+MIGRASI_DIR=migrations
+AUTO_MIGRASI=1
+AUTO_SEED=1
+BACKUP_DIR=data/backup
+BACKUP_SIMPAN=14
+BACKUP_JAM=24
+EOF
+  hijau "  File .env dibuat."
+else
+  hijau "  File .env sudah ada — tidak diubah."
 fi
-hijau "  Database siap (SQLite lokal di .wrangler/state)."
+hijau "  Database akan dibuat otomatis di data/hiratake.sqlite saat start."
 
 # ---------- 5. Service PM2 ----------
+# Menjalankan server Node produksi (server/index.mjs), BUKAN `wrangler pages dev`
+# yang hanya untuk pengembangan dan menyimpan data di tempat berbeda.
 kuning "[5/6] Menjalankan aplikasi via PM2..."
 cat > "$APP_DIR/ecosystem.config.cjs" <<EOF
 module.exports = {
   apps: [{
     name: 'hiratake',
-    script: 'npx',
-    args: 'wrangler pages dev dist --d1=webapp-production --local --ip 0.0.0.0 --port ${PORT}',
+    script: 'server/index.mjs',
+    interpreter: 'node',
     cwd: '${APP_DIR}',
     watch: false,
     instances: 1,
     exec_mode: 'fork',
     max_memory_restart: '400M',
-    env: { NODE_ENV: 'production', PORT: '${PORT}' }
+    env: {
+      NODE_ENV: 'production',
+      PORT: '${PORT}',
+      HOST: '0.0.0.0',
+      DB_FILE: 'data/hiratake.sqlite',
+      BACKUP_DIR: 'data/backup'
+    }
   }]
 }
 EOF
@@ -207,5 +254,6 @@ echo   "    pm2 restart hiratake    — restart"
 echo   "    bash install-vps.sh     — update ke versi terbaru (jalankan ulang)"
 echo   ""
 echo   "  Backup database (SQLite):"
-echo   "    tar -czf backup-\$(date +%F).tar.gz -C ${APP_DIR} .wrangler/state"
+echo   "    Otomatis setiap 24 jam ke ${APP_DIR}/data/backup"
+echo   "    Manual: tar -czf backup-\$(date +%F).tar.gz -C ${APP_DIR} data"
 hijau "=============================================="

@@ -32,6 +32,27 @@ const dr = (p) => (p.startsWith('/') ? p : resolve(AKAR, p))
 // supaya server aman dijalankan dari folder mana saja.
 process.chdir(AKAR)
 
+// Muat file .env bila ada, tanpa dependency tambahan.
+// Variabel yang SUDAH ada di environment tidak ditimpa, supaya
+// `PORT=4000 node server/index.mjs` dan systemd/Docker tetap menang.
+const muatEnv = (berkas) => {
+  if (!existsSync(berkas)) return false
+  for (const baris of readFileSync(berkas, 'utf-8').split('\n')) {
+    const t = baris.trim()
+    if (!t || t.startsWith('#')) continue
+    const pisah = t.indexOf('=')
+    if (pisah < 1) continue
+    const kunci = t.slice(0, pisah).trim()
+    if (process.env[kunci] !== undefined) continue
+    let nilai = t.slice(pisah + 1).trim()
+    // Buang tanda kutip pembungkus bila ada
+    if (nilai.length > 1 && /^(".*"|'.*')$/s.test(nilai)) nilai = nilai.slice(1, -1)
+    process.env[kunci] = nilai
+  }
+  return true
+}
+if (muatEnv(dr('.env'))) console.log('[env] konfigurasi dimuat dari .env')
+
 const PORT = parseInt(process.env.PORT || '3000')
 const HOST = process.env.HOST || '0.0.0.0'
 const DB_FILE = dr(process.env.DB_FILE || 'data/hiratake.sqlite')
