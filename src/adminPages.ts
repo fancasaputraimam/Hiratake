@@ -1,8 +1,8 @@
 // ===== Halaman Login & Dashboard Hiratake =====
 
-import { asetCss, styleTema } from './tema'
+import { asetCss, styleTema, warnaValid } from './tema'
 
-const head = (title: string) => `
+const head = (title: string, warna?: string) => `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
@@ -12,90 +12,211 @@ const head = (title: string) => `
   <meta name="theme-color" content="#2B2B2B">
   <link rel="apple-touch-icon" href="/static/logo-hiratake.png">
 ${asetCss}
-  ${styleTema('#C73E3A')}`
+  ${styleTema(warnaValid(warna))}`
 
-export const loginPage = () => `<!DOCTYPE html>
+/** Escape HTML — identitas situs berasal dari input owner. */
+const escLogin = (s: any) => String(s ?? '').replace(/[&<>"']/g, (m) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m] as string))
+
+export type IdentitasLogin = {
+  nama?: string
+  namaJp?: string
+  tagline?: string
+  warna?: string
+}
+
+export const loginPage = (s: IdentitasLogin = {}) => {
+  const nama = escLogin(s.nama || 'Hiratake')
+  const namaJp = escLogin(s.namaJp || '平茸')
+  const tagline = escLogin(s.tagline || 'Jamur Tiram Segar Berkualitas')
+  const tahun = new Date().getFullYear()
+  return `<!DOCTYPE html>
 <html lang="id">
-<head>${head('Login — Hiratake 平茸')}</head>
-<body class="bg-washi font-sans text-sumi min-h-screen flex items-center justify-center seigaiha-bg p-4">
-  <main class="w-full max-w-md">
-    <section class="bg-white rounded-3xl shadow-2xl p-8 border border-sumi/5">
-      <header class="text-center mb-8">
-        <img src="/static/logo-hiratake.png" alt="Logo Hiratake" class="w-24 h-24 mx-auto rounded-full shadow-lg mb-4">
-        <h1 class="font-serifjp text-2xl font-bold">Masuk Hiratake</h1>
-        <p class="text-vermillion font-serifjp tracking-[0.3em] text-xs mt-1">ログイン・平茸</p>
-        <p class="text-sm text-sumi/50 mt-2">Portal pengelolaan usaha jamur tiram</p>
+<head>${head(`Masuk — ${nama} ${namaJp}`, s.warna)}</head>
+<body class="bg-washi font-sans text-sumi min-h-screen lg:grid lg:grid-cols-[1.05fr_1fr]">
+
+  <!-- ===== Panel kiri: identitas merek (hanya layar lebar) ===== -->
+  <aside class="hidden lg:flex flex-col justify-between bg-sumi text-washi p-12 relative overflow-hidden">
+    <div class="absolute inset-0 opacity-[0.07] seigaiha-bg" aria-hidden="true"></div>
+    <div class="absolute -right-24 -top-24 w-96 h-96 rounded-full bg-vermillion/20 blur-3xl" aria-hidden="true"></div>
+    <div class="absolute -left-20 bottom-0 w-80 h-80 rounded-full bg-kin/10 blur-3xl" aria-hidden="true"></div>
+
+    <a href="/" class="relative flex items-center gap-3 group w-fit">
+      <img src="/static/logo-hiratake.png" alt="Logo ${nama}" class="w-11 h-11 rounded-full ring-1 ring-white/25">
+      <span>
+        <span class="font-serifjp font-bold tracking-wide">${nama.toUpperCase()}</span>
+        <span class="block text-[10px] text-kin tracking-[0.3em] -mt-0.5">${namaJp}</span>
+      </span>
+    </a>
+
+    <div class="relative max-w-md">
+      <p class="text-vermillion font-serifjp tracking-[0.35em] text-xs mb-4">管理パネル</p>
+      <h2 class="font-serifjp text-4xl font-bold leading-tight">Panel Pengelolaan<br>${nama}</h2>
+      <p class="text-washi/60 mt-4 leading-relaxed">${tagline}. Kelola baglog, panen, penjualan, keuangan, dan tim Anda dari satu tempat.</p>
+
+      <ul class="mt-9 space-y-4 text-sm">
+        <li class="flex items-center gap-3">
+          <span class="w-9 h-9 rounded-xl bg-white/10 grid place-items-center shrink-0"><i class="fas fa-seedling text-matcha"></i></span>
+          <span class="text-washi/80">Pantau baglog &amp; hasil panen harian</span>
+        </li>
+        <li class="flex items-center gap-3">
+          <span class="w-9 h-9 rounded-xl bg-white/10 grid place-items-center shrink-0"><i class="fas fa-coins text-kin"></i></span>
+          <span class="text-washi/80">Pembukuan, laba, dan piutang otomatis</span>
+        </li>
+        <li class="flex items-center gap-3">
+          <span class="w-9 h-9 rounded-xl bg-white/10 grid place-items-center shrink-0"><i class="fas fa-users text-vermillion"></i></span>
+          <span class="text-washi/80">Absensi &amp; gaji karyawan terintegrasi</span>
+        </li>
+      </ul>
+    </div>
+
+    <p class="relative text-xs text-washi/35">© ${tahun} ${nama} ${namaJp}. いただきます！</p>
+  </aside>
+
+  <!-- ===== Panel kanan: formulir masuk ===== -->
+  <main class="flex flex-col items-center justify-center p-5 sm:p-8 seigaiha-bg login-panel-bersih min-h-screen lg:min-h-0">
+    <section class="w-full max-w-[26rem]">
+
+      <!-- Kepala versi ponsel -->
+      <header class="text-center mb-7 lg:mb-8">
+        <img src="/static/logo-hiratake.png" alt="Logo ${nama}"
+             class="w-20 h-20 lg:w-14 lg:h-14 mx-auto lg:mx-0 rounded-full shadow-lg mb-4 ring-1 ring-sumi/10">
+        <h1 class="font-serifjp text-2xl font-bold lg:text-left">Selamat datang kembali</h1>
+        <p class="text-sm text-sumi/50 mt-1.5 lg:text-left">Masuk untuk membuka panel pengelolaan.</p>
       </header>
-      <form id="login-form" class="space-y-4">
-        <div>
-          <label for="login-username" class="block text-sm font-medium mb-1">Nama Pengguna</label>
-          <div class="relative">
-            <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30"></i>
-            <input id="login-username" type="text" required autocomplete="username" placeholder="username" class="form-input pl-11">
-          </div>
-        </div>
-        <div>
-          <label for="login-password" class="block text-sm font-medium mb-1">Kata Sandi</label>
-          <div class="relative">
-            <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30"></i>
-            <input id="login-password" type="password" required autocomplete="current-password" placeholder="••••••••" class="form-input pl-11">
-          </div>
-        </div>
-        <p id="login-error" class="hidden text-sm text-vermillion bg-vermillion/10 rounded-lg px-4 py-2"></p>
-        <button type="submit" id="login-btn" class="w-full bg-vermillion hover:bg-red-700 text-white font-semibold py-3 rounded-full transition shadow-lg">
-          <i class="fas fa-torii-gate mr-2"></i>Masuk
-        </button>
-      </form>
 
-      <!-- Masuk pakai kode WhatsApp (tampil hanya bila owner mengaktifkan OTP) -->
-      <section id="otp-area" class="hidden mt-5 pt-5 border-t border-sumi/10">
-        <button type="button" id="btn-mode-otp" class="w-full border-2 border-green-600 text-green-700 hover:bg-green-50 font-semibold py-2.5 rounded-full transition text-sm">
-          <i class="fab fa-whatsapp mr-2"></i>Masuk dengan kode WhatsApp
-        </button>
-
-        <form id="otp-form" class="hidden space-y-3 mt-1">
-          <p class="text-xs text-sumi/60 bg-green-50 rounded-lg px-3 py-2">
-            Kode 6 angka akan dikirim ke nomor WhatsApp yang terdaftar pada akun Anda.
-          </p>
+      <div class="bg-white rounded-3xl shadow-xl shadow-sumi/5 border border-sumi/[0.07] p-6 sm:p-7">
+        <form id="login-form" class="space-y-4" novalidate>
           <div>
-            <label for="otp-username" class="block text-sm font-medium mb-1">Nama Pengguna</label>
+            <label for="login-username" class="block text-sm font-medium mb-1.5">Nama Pengguna</label>
             <div class="relative">
-              <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30"></i>
-              <input id="otp-username" type="text" autocomplete="username" placeholder="username" class="form-input pl-11">
+              <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30 pointer-events-none"></i>
+              <input id="login-username" type="text" required autocomplete="username" autocapitalize="none"
+                     spellcheck="false" placeholder="username" class="form-input pl-11">
             </div>
           </div>
-          <button type="button" id="btn-kirim-otp" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-full transition text-sm">
-            <i class="fas fa-paper-plane mr-2"></i>Kirim Kode
-          </button>
 
-          <div id="otp-kode-area" class="hidden space-y-3">
-            <p id="otp-info" class="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2"></p>
-            <div>
-              <label for="otp-kode" class="block text-sm font-medium mb-1">Kode Verifikasi</label>
-              <div class="relative">
-                <i class="fas fa-key absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30"></i>
-                <input id="otp-kode" type="text" inputmode="numeric" maxlength="6" placeholder="000000"
-                       class="form-input pl-11 tracking-[0.5em] text-center font-bold text-lg">
-              </div>
+          <div>
+            <label for="login-password" class="block text-sm font-medium mb-1.5">Kata Sandi</label>
+            <div class="relative">
+              <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30 pointer-events-none"></i>
+              <input id="login-password" type="password" required autocomplete="current-password"
+                     placeholder="••••••••" class="form-input pl-11 pr-12">
+              <button type="button" id="toggle-sandi" aria-label="Tampilkan kata sandi" aria-pressed="false"
+                      class="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg grid place-items-center text-sumi/35 hover:text-vermillion hover:bg-vermillion/5 transition">
+                <i class="fas fa-eye text-sm"></i>
+              </button>
             </div>
-            <button type="submit" id="btn-verifikasi-otp" class="w-full bg-vermillion hover:bg-red-700 text-white font-semibold py-3 rounded-full transition shadow-lg">
-              <i class="fas fa-unlock mr-2"></i>Verifikasi & Masuk
-            </button>
+            <p id="capslock-hint" class="hidden text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-1.5 mt-2">
+              <i class="fas fa-triangle-exclamation mr-1"></i>Caps Lock sedang aktif.
+            </p>
           </div>
-          <p id="otp-error" class="hidden text-sm text-vermillion bg-vermillion/10 rounded-lg px-4 py-2"></p>
-          <button type="button" id="btn-mode-sandi" class="w-full text-xs text-sumi/50 hover:text-vermillion transition py-1">
-            <i class="fas fa-arrow-left mr-1"></i>Kembali ke login kata sandi
+
+          <p id="login-error" role="alert" class="hidden text-sm text-vermillion bg-vermillion/10 rounded-xl px-4 py-2.5"></p>
+
+          <button type="submit" id="login-btn"
+                  class="w-full bg-vermillion hover:brightness-95 active:brightness-90 text-white font-semibold py-3.5 rounded-full transition shadow-lg shadow-vermillion/25 disabled:opacity-60">
+            <i class="fas fa-torii-gate mr-2"></i>Masuk
           </button>
         </form>
-      </section>
 
-      <footer class="mt-6 text-center">
-        <a href="/" class="text-sm text-sumi/50 hover:text-vermillion transition"><i class="fas fa-arrow-left mr-1"></i>Kembali ke Beranda</a>
+        <!-- Masuk pakai kode WhatsApp (tampil hanya bila owner mengaktifkan OTP) -->
+        <section id="otp-area" class="hidden mt-5">
+          <p class="relative text-center mb-4">
+            <span class="absolute inset-x-0 top-1/2 border-t border-sumi/10" aria-hidden="true"></span>
+            <span class="relative bg-white px-3 text-xs text-sumi/40">atau</span>
+          </p>
+
+          <button type="button" id="btn-mode-otp"
+                  class="w-full border border-green-600/40 text-green-700 hover:bg-green-50 font-semibold py-3 rounded-full transition text-sm">
+            <i class="fab fa-whatsapp mr-2 text-base"></i>Masuk dengan kode WhatsApp
+          </button>
+
+          <form id="otp-form" class="hidden space-y-3.5" novalidate>
+            <p class="text-xs text-sumi/60 bg-green-50 rounded-xl px-3.5 py-2.5 leading-relaxed">
+              <i class="fas fa-circle-info mr-1 text-green-700"></i>
+              Kode 6 angka akan dikirim ke nomor WhatsApp yang terdaftar pada akun Anda.
+            </p>
+            <div>
+              <label for="otp-username" class="block text-sm font-medium mb-1.5">Nama Pengguna</label>
+              <div class="relative">
+                <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30 pointer-events-none"></i>
+                <input id="otp-username" type="text" autocomplete="username" autocapitalize="none"
+                       spellcheck="false" placeholder="username" class="form-input pl-11">
+              </div>
+            </div>
+            <button type="button" id="btn-kirim-otp"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-full transition text-sm disabled:opacity-60">
+              <i class="fas fa-paper-plane mr-2"></i>Kirim Kode
+            </button>
+
+            <div id="otp-kode-area" class="hidden space-y-3.5">
+              <p id="otp-info" class="text-xs text-green-700 bg-green-50 rounded-xl px-3.5 py-2.5"></p>
+              <div>
+                <label for="otp-kode" class="block text-sm font-medium mb-1.5">Kode Verifikasi</label>
+                <div class="relative">
+                  <i class="fas fa-key absolute left-4 top-1/2 -translate-y-1/2 text-sumi/30 pointer-events-none"></i>
+                  <input id="otp-kode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+                         placeholder="000000" class="form-input pl-11 tracking-[0.5em] text-center font-bold text-lg">
+                </div>
+              </div>
+              <button type="submit" id="btn-verifikasi-otp"
+                      class="w-full bg-vermillion hover:brightness-95 text-white font-semibold py-3.5 rounded-full transition shadow-lg shadow-vermillion/25 disabled:opacity-60">
+                <i class="fas fa-unlock mr-2"></i>Verifikasi &amp; Masuk
+              </button>
+            </div>
+
+            <p id="otp-error" role="alert" class="hidden text-sm text-vermillion bg-vermillion/10 rounded-xl px-4 py-2.5"></p>
+            <button type="button" id="btn-mode-sandi" class="w-full text-xs text-sumi/50 hover:text-vermillion transition py-1">
+              <i class="fas fa-arrow-left mr-1"></i>Kembali ke login kata sandi
+            </button>
+          </form>
+        </section>
+      </div>
+
+      <footer class="mt-6 flex items-center justify-between gap-3 text-xs">
+        <a href="/" class="text-sumi/50 hover:text-vermillion transition inline-flex items-center gap-1.5">
+          <i class="fas fa-arrow-left"></i>Kembali ke Beranda
+        </a>
+        <span class="text-sumi/35 inline-flex items-center gap-1.5">
+          <i class="fas fa-shield-halved"></i>Koneksi terenkripsi
+        </span>
       </footer>
+
+      <p class="lg:hidden text-center text-[11px] text-sumi/35 mt-5">© ${tahun} ${nama} ${namaJp}</p>
     </section>
-    <p class="text-center text-xs text-sumi/40 mt-4">© 2026 Hiratake 平茸</p>
   </main>
   <script>
+    // ---------- Tampilkan/sembunyikan kata sandi ----------
+    (() => {
+      const tombol = document.getElementById('toggle-sandi');
+      const input = document.getElementById('login-password');
+      tombol.addEventListener('click', () => {
+        const lihat = input.type === 'password';
+        input.type = lihat ? 'text' : 'password';
+        tombol.setAttribute('aria-pressed', String(lihat));
+        tombol.setAttribute('aria-label', lihat ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi');
+        tombol.innerHTML = '<i class="fas ' + (lihat ? 'fa-eye-slash' : 'fa-eye') + ' text-sm"></i>';
+        input.focus();
+      });
+
+      // Peringatan Caps Lock — penyebab gagal login yang paling sering
+      const petunjuk = document.getElementById('capslock-hint');
+      const cek = (e) => {
+        if (typeof e.getModifierState !== 'function') return;
+        petunjuk.classList.toggle('hidden', !e.getModifierState('CapsLock'));
+      };
+      input.addEventListener('keydown', cek);
+      input.addEventListener('keyup', cek);
+      input.addEventListener('blur', () => petunjuk.classList.add('hidden'));
+    })();
+
+    // Fokus awal ke kolom pertama yang kosong (bukan di ponsel, agar papan
+    // ketik tidak langsung menutupi tampilan)
+    if (window.matchMedia('(min-width: 1024px)').matches) {
+      document.getElementById('login-username').focus();
+    }
+
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('login-btn');
@@ -198,6 +319,7 @@ export const loginPage = () => `<!DOCTYPE html>
   </script>
 </body>
 </html>`
+}
 
 export const adminPage = () => `<!DOCTYPE html>
 <html lang="id">

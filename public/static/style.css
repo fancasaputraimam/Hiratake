@@ -669,3 +669,25 @@ main { overflow-x: hidden; }
   font-size: 0.75rem;
   color: rgba(43, 43, 43, 0.5);
 }
+
+/* ============================================================
+   Perbaikan halaman masuk (/login)
+   `.form-input` menetapkan padding sendiri dan file ini dimuat
+   SETELAH tailwind.css, sehingga utilitas padding Tailwind
+   (pl-11, pr-12) kalah spesifisitas. Aturan gabungan di bawah
+   memulihkannya agar ikon di dalam kolom tidak menabrak teks.
+   ============================================================ */
+.form-input.pl-11 { padding-left: 2.75rem; }
+.form-input.pr-12 { padding-right: 3rem; }
+
+/* Warna fokus mengikuti warna tema pilihan owner (bukan merah tetap) */
+.form-input:focus {
+  border-color: var(--vermillion, #C73E3A);
+  box-shadow: 0 0 0 3px rgb(var(--vermillion-rgb, 199 62 58) / 0.12);
+}
+
+/* Panel kanan halaman masuk: latar rata washi tanpa pola seigaiha
+   (pola hanya untuk tampilan ponsel & panel kiri) */
+@media (min-width: 1024px) {
+  .login-panel-bersih { background-image: none !important; background-color: #F7F3EA; }
+}

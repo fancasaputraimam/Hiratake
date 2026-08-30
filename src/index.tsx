@@ -498,7 +498,15 @@ app.get('/sitemap.xml', async (c) => {
 app.get('/login', async (c) => {
   const user = await getSessionUser(c)
   if (user) return c.redirect('/admin')
-  return c.html(loginPage())
+  // Identitas & warna situs diambil dari pengaturan owner agar halaman masuk
+  // ikut berubah saat merek diganti dari dashboard (tab Situs).
+  const cfg = await getPengaturan(c.env.DB).catch(() => ({} as Record<string, string>))
+  return c.html(loginPage({
+    nama: cfg.situs_nama,
+    namaJp: cfg.situs_nama_jp,
+    tagline: cfg.situs_tagline,
+    warna: cfg.situs_warna
+  }))
 })
 
 // Halaman nota cetak (wajib login — data via API)
