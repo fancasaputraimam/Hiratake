@@ -6,3 +6,9 @@ dist/
 *.log
 .pm2/
 *.tar.gz
+
+# Data VPS (database SQLite + backup)
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

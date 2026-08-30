@@ -1,40 +1,48 @@
-// ===== Hiratake — Frontend JS =====
-// Nomor WA otomatis dari pengaturan database (di-inject server), fallback default
-const WA_NUMBER = (window.HIRATAKE_CONFIG && window.HIRATAKE_CONFIG.wa) || '6281234567890';
+// ===== Hiratake — Frontend JS (Landing Page) =====
+// Konfigurasi di-inject server: nomor WA & status pesanan online
+const CFG = window.HIRATAKE_CONFIG || {};
+const WA_NUMBER = CFG.wa || '6281234567890';
+const PESAN_ONLINE = CFG.pesanOnline !== false;
 
 // Format Rupiah
 const rupiah = (n) => 'Rp ' + n.toLocaleString('id-ID');
 
-// Muat produk dari API
-let produkList = [];
+// Escape HTML (anti-XSS) — data produk berasal dari input admin
+const escH = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (m) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+// Muat produk dari API — klik kartu/tombol produk langsung menuju halaman checkout
+// dengan produk tersebut sudah terpilih (?produk=ID). Satu jalur pemesanan saja.
 async function loadProduk() {
   try {
     const res = await fetch('/api/produk');
     const data = await res.json();
-    produkList = data.produk;
+    const produkList = data.produk;
 
     const grid = document.getElementById('product-list');
     grid.innerHTML = produkList.map((p) => `
-      <article class="product-card fade-up">
-        ${p.badge ? `<span class="badge">${p.badge}</span>` : ''}
-        <div class="p-icon"><i class="fas ${p.ikon}"></i></div>
-        <p class="text-xs text-red-700/60 font-medium tracking-widest mb-1">${p.jp}</p>
-        <h3 class="font-semibold text-lg mb-1" style="font-family:'Noto Serif JP',serif">${p.nama}</h3>
-        <p class="text-sm text-gray-500 mb-4 leading-relaxed">${p.deskripsi}</p>
+      <article class="product-card fade-up cursor-pointer group" data-produk-id="${p.id}"
+               role="link" tabindex="0" aria-label="Pesan ${escH(p.nama)}">
+        ${p.badge ? `<span class="badge">${escH(p.badge)}</span>` : ''}
+        <div class="p-icon"><i class="fas ${escH(p.ikon)}"></i></div>
+        <p class="text-xs text-red-700/60 font-medium tracking-widest mb-1">${escH(p.jp)}</p>
+        <h3 class="font-semibold text-lg mb-1" style="font-family:'Noto Serif JP',serif">${escH(p.nama)}</h3>
+        <p class="text-sm text-gray-500 mb-4 leading-relaxed">${escH(p.deskripsi)}</p>
         <div class="flex items-center justify-between">
-          <span class="text-xl font-bold" style="color:#C73E3A">${rupiah(p.harga)}<span class="text-xs font-normal text-gray-400">/${p.satuan}</span></span>
-          <button onclick="pesanProduk(${p.id})" class="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded-full transition">
-            <i class="fab fa-whatsapp mr-1"></i>Pesan
-          </button>
+          <span class="text-xl font-bold" style="color:#C73E3A">${rupiah(p.harga)}<span class="text-xs font-normal text-gray-400">/${escH(p.satuan)}</span></span>
+          <span class="bg-vermillion group-hover:bg-red-700 text-white text-sm px-4 py-2 rounded-full transition pointer-events-none" style="background-color:#C73E3A">
+            <i class="fas fa-basket-shopping mr-1"></i>Pesan
+          </span>
         </div>
       </article>
     `).join('');
 
-    // Isi dropdown form
-    const select = document.getElementById('order-product');
-    select.innerHTML = produkList.map((p) =>
-      `<option value="${p.id}">${p.nama} — ${rupiah(p.harga)}</option>`
-    ).join('');
+    // Klik / Enter pada kartu → langsung ke checkout dengan produk terpilih
+    grid.querySelectorAll('[data-produk-id]').forEach((card) => {
+      const go = () => pesanProduk(parseInt(card.dataset.produkId));
+      card.addEventListener('click', go);
+      card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    });
 
     // Aktifkan animasi untuk kartu baru
     observeFadeUp();
@@ -43,60 +51,16 @@ async function loadProduk() {
   }
 }
 
-// Pesan langsung dari kartu produk
+// Satu jalur pemesanan: ke halaman checkout (produk sudah terpilih).
+// Bila pesanan online dimatikan owner, fallback ke chat WhatsApp.
 function pesanProduk(id) {
-  const p = produkList.find((x) => x.id === id);
-  if (!p) return;
-  const pesan = `Halo Hiratake! 🍄\nSaya ingin memesan:\n\n• ${p.nama}\n• Harga: ${rupiah(p.harga)}/${p.satuan}\n\nMohon info ketersediaannya. Terima kasih!`;
-  window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(pesan)}`, '_blank');
-}
-
-// Form pemesanan → WhatsApp
-document.getElementById('order-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const nama = document.getElementById('order-name').value.trim();
-  const wa = document.getElementById('order-wa').value.trim();
-  const id = parseInt(document.getElementById('order-product').value);
-  const qty = parseInt(document.getElementById('order-qty').value) || 1;
-  const note = document.getElementById('order-note').value.trim();
-  const p = produkList.find((x) => x.id === id);
-  if (!p) return;
-
-  const tombol = document.getElementById('order-submit');
-  const hasil = document.getElementById('order-hasil');
-  tombol.disabled = true;
-  tombol.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Mengirim...';
-
-  try {
-    // 1. Simpan pesanan ke sistem (database asli)
-    const res = await fetch('/api/pesan-online', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nama, wa, alamat: note, catatan: note, item: [{ produk_id: id, jumlah: qty }] })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Gagal mengirim pesanan.');
-
-    hasil.className = 'text-sm text-center rounded-xl p-3 bg-green-100 text-green-800';
-    hasil.innerHTML = `✅ Pesanan <strong>${data.kode}</strong> tercatat! Total estimasi ${rupiah(data.total)}.<br>Membuka WhatsApp untuk konfirmasi...`;
-    hasil.classList.remove('hidden');
-
-    // 2. Buka WA untuk konfirmasi (bawa kode pesanan)
-    let pesan = `Halo Hiratake! 🍄\nSaya *${nama}* baru saja memesan lewat website:\n\n• Kode: ${data.kode}\n• Produk: ${p.nama}\n• Jumlah: ${qty} ${p.satuan}\n• Estimasi total: ${rupiah(data.total)}`;
-    if (note) pesan += `\n• Alamat/Catatan: ${note}`;
-    pesan += '\n\nMohon konfirmasinya. Terima kasih!';
-    setTimeout(() => window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(pesan)}`, '_blank'), 800);
-    document.getElementById('order-form').reset();
-    document.getElementById('order-qty').value = 1;
-  } catch (err) {
-    hasil.className = 'text-sm text-center rounded-xl p-3 bg-red-100 text-red-700';
-    hasil.textContent = '⚠️ ' + err.message;
-    hasil.classList.remove('hidden');
-  } finally {
-    tombol.disabled = false;
-    tombol.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Kirim Pesanan';
+  if (PESAN_ONLINE) {
+    window.location.href = '/checkout?produk=' + id;
+  } else {
+    const pesan = 'Halo! 🍄 Saya ingin memesan jamur tiram. Mohon info ketersediaannya. Terima kasih!';
+    window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(pesan)}`, '_blank');
   }
-});
+}
 
 // Menu mobile
 document.getElementById('menu-toggle').addEventListener('click', () => {
@@ -138,7 +102,36 @@ window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('shadow-md', window.scrollY > 20);
 });
 
+// Pesan pengarahan bila pengunjung mencoba membuka /checkout langsung.
+// Server mengalihkan ke /?pilih=1#produk atau /?produk_tidak_ada=1#produk.
+function tampilkanPesanPilihProduk() {
+  const q = new URLSearchParams(location.search);
+  const kotak = document.getElementById('pilih-produk-dulu');
+  const teks = document.getElementById('pilih-produk-dulu-teks');
+  if (!kotak || !teks) return;
+
+  let isi = '';
+  if (q.get('pilih') === '1') {
+    isi = '<strong>Silakan pilih produk dulu.</strong> Halaman checkout hanya bisa dibuka setelah Anda memilih produk yang diminati di bawah ini.';
+  } else if (q.get('produk_tidak_ada') === '1') {
+    isi = '<strong>Produk tidak tersedia.</strong> Produk yang Anda tuju sudah tidak aktif atau tidak ditemukan. Silakan pilih produk lain di bawah ini.';
+  }
+  if (!isi) return;
+
+  teks.innerHTML = isi;
+  kotak.classList.remove('hidden');
+
+  // Bersihkan query dari address bar agar pesan tidak muncul lagi saat refresh
+  if (window.history.replaceState) {
+    window.history.replaceState({}, '', location.pathname + '#produk');
+  }
+  setTimeout(() => {
+    document.getElementById('produk')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 250);
+}
+
 // Init
 observeFadeUp();
 animateCounters();
 loadProduk();
+tampilkanPesanPilihProduk();

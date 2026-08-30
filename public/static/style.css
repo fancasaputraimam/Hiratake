@@ -411,3 +411,261 @@ main { overflow-x: hidden; }
   justify-content: center;
 }
 .nav-badge-kin { background: #C9A227; }
+
+/* ===== Sub-navigasi tab WhatsApp ===== */
+.wa-sub-btn,
+.bayar-sub-btn {
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.45rem 1.1rem;
+  border-radius: 9999px;
+  background: #fff;
+  color: #2B2B2B;
+  border: 1px solid rgba(43, 43, 43, 0.12);
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+.wa-sub-btn:hover,
+.bayar-sub-btn:hover { background: #F7F3EA; }
+.wa-sub-btn.active,
+.bayar-sub-btn.active {
+  background: #C73E3A;
+  color: #fff;
+  border-color: #C73E3A;
+}
+
+/* Lencana status koneksi WhatsApp */
+.wa-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+}
+.wa-pill-ok    { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+.wa-pill-warn  { background: rgba(201, 162, 39, 0.16); color: #92700f; }
+.wa-pill-off   { background: rgba(199, 62, 58, 0.12); color: #C73E3A; }
+
+/* Kartu template pesan */
+.wa-tpl-kartu {
+  border: 1px solid rgba(43, 43, 43, 0.1);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+  background: #fff;
+  transition: box-shadow 0.2s ease;
+}
+.wa-tpl-kartu:hover { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07); }
+.wa-tpl-isi {
+  font-size: 0.72rem;
+  color: rgba(43, 43, 43, 0.6);
+  white-space: pre-wrap;
+  max-height: 4.5rem;
+  overflow: hidden;
+  font-family: ui-monospace, monospace;
+}
+
+/* ============================================================
+   FASE 8 — Checkout pelanggan (kartu produk, stepper, metode)
+   ============================================================ */
+
+/* Indikator langkah */
+.ck-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(43, 43, 43, 0.35);
+  transition: color 0.25s ease;
+}
+.ck-step::before {
+  content: attr(data-step);
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 9999px;
+  background: rgba(43, 43, 43, 0.08);
+  color: rgba(43, 43, 43, 0.45);
+  font-size: 0.7rem;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+.ck-step-aktif { color: #2B2B2B; }
+.ck-step-aktif::before {
+  background: var(--vermillion, #C73E3A);
+  color: #fff;
+}
+
+/* Kartu produk yang bisa dipilih */
+.ck-produk {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  border: 1.5px solid rgba(43, 43, 43, 0.1);
+  border-radius: 1rem;
+  padding: 0.75rem 0.9rem;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.ck-produk:hover {
+  border-color: rgba(199, 62, 58, 0.45);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.ck-produk-aktif {
+  border-color: var(--vermillion, #C73E3A);
+  background: rgba(199, 62, 58, 0.04);
+  box-shadow: 0 4px 14px rgba(199, 62, 58, 0.1);
+}
+.ck-produk-ikon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.85rem;
+  background: rgba(122, 132, 80, 0.12);
+  color: #7A8450;
+  font-size: 1.05rem;
+}
+.ck-produk-aktif .ck-produk-ikon {
+  background: rgba(199, 62, 58, 0.12);
+  color: var(--vermillion, #C73E3A);
+}
+
+/* Stepper jumlah */
+.ck-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(43, 43, 43, 0.12);
+  border-radius: 9999px;
+  padding: 0.15rem;
+  background: #fff;
+}
+.ck-qty-btn {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  color: #2B2B2B;
+  background: rgba(43, 43, 43, 0.05);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ck-qty-btn:hover {
+  background: var(--vermillion, #C73E3A);
+  color: #fff;
+}
+.ck-qty-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: rgba(43, 43, 43, 0.05);
+  color: #2B2B2B;
+}
+
+/* Pilihan metode pembayaran */
+.ck-metode {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border: 1.5px solid rgba(43, 43, 43, 0.1);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.ck-metode:hover { border-color: rgba(199, 62, 58, 0.4); }
+.ck-metode:has(input:checked) {
+  border-color: var(--vermillion, #C73E3A);
+  background: rgba(199, 62, 58, 0.04);
+  box-shadow: 0 4px 14px rgba(199, 62, 58, 0.1);
+}
+.ck-metode-mati {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: rgba(43, 43, 43, 0.03);
+}
+.ck-metode-mati:hover { border-color: rgba(43, 43, 43, 0.1); }
+
+/* ============================================================
+   Fase 10 — Testimoni pelanggan di landing page
+   ============================================================ */
+.testi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid rgba(43, 43, 43, 0.08);
+  border-radius: 1.5rem;
+  padding: 1.75rem 1.5rem 1.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.testi-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(199, 62, 58, 0.25);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.09);
+}
+.testi-quote {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  font-size: 1.75rem;
+  color: var(--vermillion, #C73E3A);
+  opacity: 0.12;
+}
+.testi-stars {
+  display: flex;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.85rem;
+}
+.testi-isi {
+  flex: 1;
+  font-size: 0.925rem;
+  line-height: 1.7;
+  color: rgba(43, 43, 43, 0.78);
+  margin-bottom: 1.25rem;
+}
+.testi-isi::before { content: '\201C'; }
+.testi-isi::after { content: '\201D'; }
+.testi-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(43, 43, 43, 0.07);
+}
+.testi-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 9999px;
+  background: rgba(199, 62, 58, 0.1);
+  color: var(--vermillion, #C73E3A);
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 700;
+  font-size: 1rem;
+}
+.testi-nama {
+  display: block;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #2B2B2B;
+}
+.testi-asal {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(43, 43, 43, 0.5);
+}

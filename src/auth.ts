@@ -20,16 +20,58 @@ export async function sha256hex(text: string): Promise<string> {
     .join('')
 }
 
-// Format hash: salt$sha256(salt:password)
+const hex = (buf: ArrayBuffer | Uint8Array): string =>
+  Array.from(buf instanceof Uint8Array ? buf : new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+
+// PBKDF2-SHA256 via Web Crypto (didukung Cloudflare Workers).
+// 100.000 iterasi — jauh lebih tahan brute-force dibanding 1x SHA-256,
+// tetap aman di bawah batas CPU Workers (crypto.subtle native, bukan JS).
+const PBKDF2_ITERASI = 100000
+
+async function pbkdf2hex(password: string, saltHex: string, iterasi: number): Promise<string> {
+  const salt = new Uint8Array((saltHex.match(/.{2}/g) || []).map((h) => parseInt(h, 16)))
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iterasi }, key, 256)
+  return hex(bits)
+}
+
+// Format hash baru: pbkdf2$<iterasi>$<saltHex>$<hashHex>
+// Format lama (masih diterima saat verifikasi): salt$sha256(salt:password)
 export async function hashPassword(password: string): Promise<string> {
-  const salt = crypto.randomUUID().slice(0, 8)
-  return salt + '$' + (await sha256hex(salt + ':' + password))
+  const salt = new Uint8Array(16)
+  crypto.getRandomValues(salt)
+  const saltHex = hex(salt)
+  return `pbkdf2$${PBKDF2_ITERASI}$${saltHex}$${await pbkdf2hex(password, saltHex, PBKDF2_ITERASI)}`
+}
+
+// Perbandingan waktu-konstan sederhana (hindari timing attack)
+function samaAman(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let beda = 0
+  for (let i = 0; i < a.length; i++) beda |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return beda === 0
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [salt, hash] = stored.split('$')
+  const bagian = stored.split('$')
+  if (bagian[0] === 'pbkdf2' && bagian.length === 4) {
+    const iterasi = parseInt(bagian[1])
+    if (!iterasi || !bagian[2] || !bagian[3]) return false
+    return samaAman(await pbkdf2hex(password, bagian[2], iterasi), bagian[3])
+  }
+  // Fallback format lama: salt$sha256(salt:password)
+  const [salt, hash] = bagian
   if (!salt || !hash) return false
-  return (await sha256hex(salt + ':' + password)) === hash
+  return samaAman(await sha256hex(salt + ':' + password), hash)
+}
+
+// True bila hash tersimpan masih format lama / iterasi usang → perlu di-rehash
+export function needsRehash(stored: string): boolean {
+  const bagian = stored.split('$')
+  return !(bagian[0] === 'pbkdf2' && parseInt(bagian[1]) >= PBKDF2_ITERASI)
 }
 
 export function generateToken(): string {

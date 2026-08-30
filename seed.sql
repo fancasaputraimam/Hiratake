@@ -16,3 +16,10 @@ INSERT OR IGNORE INTO produk (id, nama, jp, harga, satuan, deskripsi, ikon, badg
 -- Tidak ada data contoh/mock. Semua data transaksi (panen, penjualan, dll)
 -- murni berasal dari input pengguna melalui dashboard, sehingga landing page
 -- selalu sinkron dengan data asli.
+
+-- Berat per unit (kg) untuk konversi stok — dijalankan ulang aman (idempotent)
+UPDATE produk SET berat_kg = 0.25 WHERE nama LIKE '%250g%';
+UPDATE produk SET berat_kg = 0.5  WHERE nama LIKE '%500g%';
+UPDATE produk SET berat_kg = 1.0  WHERE nama LIKE '%1kg%';
+UPDATE produk SET berat_kg = 10.0 WHERE nama LIKE '%10kg%';
+UPDATE produk SET berat_kg = 0    WHERE nama LIKE '%Crispy%' OR nama LIKE '%Baglog%';
