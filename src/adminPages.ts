@@ -1624,11 +1624,18 @@ export const adminPage = () => `<!DOCTYPE html>
             <details class="mt-3 text-xs text-sumi/60">
               <summary class="cursor-pointer font-medium text-vermillion">Cara memasang kredensial (klik)</summary>
               <div class="mt-2 space-y-2 bg-washi rounded-lg p-3">
-                <p><strong>1. Produksi (Cloudflare):</strong></p>
+                <p class="text-sumi/70">Semua pengaturan lain di halaman ini bisa diubah langsung dari web.
+                Khusus <strong>dua kunci rahasia</strong> di bawah, demi keamanan hanya bisa dipasang di server —
+                supaya tidak tersimpan di database dan tidak pernah terkirim ke browser. Cukup <strong>sekali pasang</strong>.</p>
+                <p><strong>Bila memakai VPS sendiri:</strong> buka berkas <code>.env</code> di folder aplikasi, isi:</p>
+                <pre class="bg-sumi text-washi p-2 rounded overflow-x-auto text-[11px]">OPENWA_API_KEY=kunci-anda
+OPENWA_WEBHOOK_SECRET=rahasia-anda</pre>
+                <p class="text-sumi/70">lalu jalankan <code>pm2 restart hiratake</code>. Selesai — sisanya dari web.</p>
+                <p><strong>Bila memakai Cloudflare:</strong></p>
                 <pre class="bg-sumi text-washi p-2 rounded overflow-x-auto text-[11px]">npx wrangler pages secret put OPENWA_API_KEY
 npx wrangler pages secret put OPENWA_WEBHOOK_SECRET</pre>
-                <p><strong>2. Lokal:</strong> isi berkas <code>.dev.vars</code> di folder proyek.</p>
-                <p><strong>3. Daftarkan webhook di OpenWA</strong> agar balasan otomatis & OTP jalan:</p>
+                <p><strong>Untuk pengembangan lokal:</strong> isi berkas <code>.dev.vars</code> di folder proyek.</p>
+                <p><strong>Terakhir, daftarkan webhook di OpenWA</strong> agar balasan otomatis & OTP jalan:</p>
                 <pre class="bg-sumi text-washi p-2 rounded overflow-x-auto text-[11px]" id="wa-cfg-webhook-cmd"></pre>
               </div>
             </details>
@@ -1970,11 +1977,17 @@ npx wrangler pages secret put OPENWA_WEBHOOK_SECRET</pre>
 
           <div>
             <p class="font-medium mb-1"><i class="fas fa-2 text-vermillion mr-2"></i>Otomatis: pakai gateway</p>
-            <p class="text-sumi/70 text-xs leading-relaxed mb-2">Daftar ke salah satu provider, ambil kredensialnya, lalu pasang sebagai secret server:</p>
+            <p class="text-sumi/70 text-xs leading-relaxed mb-2">Daftar ke salah satu provider, ambil kredensialnya, lalu pasang di server (sekali saja):</p>
+            <p class="text-xs font-medium mb-1">Bila memakai VPS sendiri — isi berkas <code>.env</code>:</p>
+            <pre class="bg-sumi text-washi p-3 rounded-lg overflow-x-auto text-[11px]">BAYAR_SERVER_KEY=kunci-server-anda
+BAYAR_CLIENT_KEY=kunci-client-anda
+BAYAR_CALLBACK_SECRET=rahasia-callback-anda</pre>
+            <p class="text-xs text-sumi/50 mt-1 mb-2">lalu <code>pm2 restart hiratake</code>.</p>
+            <p class="text-xs font-medium mb-1">Bila memakai Cloudflare:</p>
             <pre class="bg-sumi text-washi p-3 rounded-lg overflow-x-auto text-[11px]">npx wrangler pages secret put BAYAR_SERVER_KEY
 npx wrangler pages secret put BAYAR_CLIENT_KEY
 npx wrangler pages secret put BAYAR_CALLBACK_SECRET</pre>
-            <p class="text-xs text-sumi/50 mt-1">Untuk pengembangan lokal, isi berkas <code>.dev.vars</code>. Kredensial <strong>tidak pernah</strong> disimpan di database maupun dikirim ke browser.</p>
+            <p class="text-xs text-sumi/50 mt-1">Untuk pengembangan lokal, isi berkas <code>.dev.vars</code>. Kredensial <strong>tidak pernah</strong> disimpan di database maupun dikirim ke browser — itulah sebabnya bagian ini tidak bisa diisi dari web.</p>
           </div>
 
           <div>

@@ -722,8 +722,10 @@ bayarRoutes.put('/api/admin/bayar/pengaturan', requireAuth(['owner']), async (c)
     const provider = body.bayar_provider || (await cfgVal(c.env.DB, 'bayar_provider', 'manual'))
     if (provider !== 'manual' && !c.env.BAYAR_SERVER_KEY) {
       return c.json({
-        error: 'Kredensial gateway belum dipasang di server. Jalankan: npx wrangler pages secret put BAYAR_SERVER_KEY ' +
-          '(atau isi .dev.vars untuk lokal), lalu aktifkan lagi.'
+        error: 'Kredensial gateway belum dipasang di server. ' +
+          'VPS: tambahkan BAYAR_SERVER_KEY di berkas .env lalu pm2 restart hiratake. ' +
+          'Cloudflare: npx wrangler pages secret put BAYAR_SERVER_KEY. ' +
+          'Lokal: isi .dev.vars. Setelah itu aktifkan lagi.'
       }, 400)
     }
     if (provider === 'manual') {

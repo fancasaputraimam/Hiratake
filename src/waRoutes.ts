@@ -89,7 +89,10 @@ waRoutes.put('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async 
   // Guard: mengaktifkan integrasi tanpa API key hanya akan bikin semua pesan gagal
   if (body.openwa_aktif === '1' && !c.env.OPENWA_API_KEY) {
     return c.json({
-      error: 'API key OpenWA belum dipasang di server. Jalankan: npx wrangler pages secret put OPENWA_API_KEY (atau isi .dev.vars untuk lokal), lalu aktifkan lagi.'
+      error: 'API key OpenWA belum dipasang di server. ' +
+        'VPS: tambahkan OPENWA_API_KEY di berkas .env lalu pm2 restart hiratake. ' +
+        'Cloudflare: npx wrangler pages secret put OPENWA_API_KEY. ' +
+        'Lokal: isi .dev.vars. Setelah itu aktifkan lagi.'
     }, 400)
   }
 
