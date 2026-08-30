@@ -2672,7 +2672,8 @@ document.getElementById('bayar-terima-otp')?.addEventListener('input', (e) => {
 let OTOMATIS_ADA_PERBAIKAN = false;
 
 async function loadOtomatis() {
-  await Promise.all([loadOtomatisStatus(), jalankanPeriksa(), loadLibur(), loadBuku()]);
+  await Promise.all([loadOtomatisStatus(), jalankanPeriksa(), loadLibur(), loadBuku(),
+    loadOpname(), loadAset(), loadEksporRiwayat()]);
 }
 
 // ---------- Status & denyut ----------
@@ -2734,6 +2735,8 @@ async function loadOtomatisStatus() {
     document.getElementById('oto-ingat').value = p.ingatJam;
     const elTgl = document.getElementById('oto-tutup-tgl');
     if (elTgl) elTgl.value = p.tutupTanggal ?? 5;
+    const elTol = document.getElementById('oto-opname-tol');
+    if (elTol) elTol.value = p.opnameToleransi ?? 5000;
     const cek = (id, kode) => {
       const t = d.tugas.find((x) => x.kode === kode);
       const el = document.getElementById(id);
@@ -2749,6 +2752,8 @@ async function loadOtomatisStatus() {
     cek('oto-baglog', 'baglog');
     cek('oto-tutupbuku', 'tutupbuku');
     cek('oto-rekap', 'rekap');
+    cek('oto-penyusutan', 'penyusutan');
+    cek('oto-opname', 'opname');
     const elRekon = document.getElementById('oto-rekonkas');
     if (elRekon) elRekon.checked = d.pengaturan.rekonKas !== false;
   } catch (e) { toast(e.message, false); }
@@ -2777,7 +2782,10 @@ document.getElementById('form-otomatis')?.addEventListener('submit', async (e) =
         otomatis_baglog_biaya: document.getElementById('oto-baglog')?.checked ? '1' : '0',
         otomatis_tutup_buku: document.getElementById('oto-tutupbuku')?.checked ? '1' : '0',
         otomatis_rekap_bulanan: document.getElementById('oto-rekap')?.checked ? '1' : '0',
-        otomatis_rekon_kas: document.getElementById('oto-rekonkas')?.checked ? '1' : '0'
+        otomatis_rekon_kas: document.getElementById('oto-rekonkas')?.checked ? '1' : '0',
+        otomatis_penyusutan: document.getElementById('oto-penyusutan')?.checked ? '1' : '0',
+        otomatis_opname_ingat: document.getElementById('oto-opname')?.checked ? '1' : '0',
+        kas_opname_toleransi: document.getElementById('oto-opname-tol')?.value || '5000'
       })
     });
     toast('Aturan otomatisasi disimpan.');
@@ -3064,4 +3072,302 @@ document.getElementById('btn-rekon')?.addEventListener('click', async () => {
   } catch (e) {
     box.innerHTML = `<p class="text-sm text-red-700">${escHtml(e.message)}</p>`;
   }
+});
+
+// ============================================================
+//  FASE 13 — Kas Opname, Aset Tetap & Ekspor Buku Besar
+// ============================================================
+
+/** Tanggal hari ini menurut WIB, format YYYY-MM-DD */
+function hariIniWIBstr() {
+  return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+}
+/** Bulan ini menurut WIB, format YYYY-MM */
+function bulanIniWIBstr() {
+  return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7);
+}
+
+// ---------- Kas Opname ----------
+async function loadOpname() {
+  const ring = document.getElementById('opname-ringkas');
+  const riw = document.getElementById('opname-riwayat');
+  if (!ring) return;
+  try {
+    const d = await api('/api/admin/kas/opname');
+    const s = d.saldo || {};
+
+    // Prefill form: tanggal hari ini, uang fisik dari opname hari ini bila ada
+    const elTgl = document.getElementById('opname-tanggal');
+    if (elTgl && !elTgl.value) elTgl.value = d.tanggal || hariIniWIBstr();
+    const elFisik = document.getElementById('opname-fisik');
+    if (elFisik && d.hariIni) elFisik.value = d.hariIni.saldo_fisik;
+    const elCat = document.getElementById('opname-catatan');
+    if (elCat && d.hariIni) elCat.value = d.hariIni.catatan || '';
+
+    ring.innerHTML = `
+      <div class="rounded-xl border border-sumi/10 bg-washi p-4">
+        <p class="text-xs uppercase tracking-wide text-sumi/50 mb-2">
+          Saldo kas menurut sistem · per ${escHtml(d.tanggal || '-')}</p>
+        <p class="text-2xl font-semibold ${s.saldoSistem < 0 ? 'text-red-700' : ''}">${rupiah(s.saldoSistem)}</p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-3 pt-3 border-t border-sumi/10">
+          <div><p class="text-xs text-sumi/45">Saldo awal</p><p class="font-semibold">${rupiah(s.saldoAwal)}</p></div>
+          <div><p class="text-xs text-sumi/45">Uang masuk</p><p class="font-semibold text-green-700">${rupiah(s.masuk)}</p></div>
+          <div><p class="text-xs text-sumi/45">Uang keluar</p><p class="font-semibold text-red-700">${rupiah(s.keluar)}</p></div>
+          <div><p class="text-xs text-sumi/45">Toleransi</p><p class="font-semibold">${rupiah(d.toleransi)}</p></div>
+        </div>
+        <p class="text-xs text-sumi/40 mt-2">Dihitung sejak opname terakhir: ${escHtml(s.sejak || '-')}</p>
+      </div>`;
+
+    // Status opname hari ini
+    if (d.hariIni) {
+      const sel = Number(d.hariIni.selisih);
+      const wajar = Math.abs(sel) <= Number(d.toleransi || 0);
+      ring.innerHTML += `
+        <div class="mt-3 rounded-xl p-4 ${wajar ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}">
+          <p class="font-semibold text-sm ${wajar ? 'text-green-800' : 'text-red-800'}">
+            <i class="fas ${wajar ? 'fa-circle-check' : 'fa-circle-exclamation'} mr-1"></i>
+            ${wajar ? 'Kas hari ini sudah dihitung dan cocok'
+                    : `Selisih ${rupiah(Math.abs(sel))} — ${sel < 0 ? 'uang KURANG' : 'uang LEBIH'} dari catatan`}</p>
+          ${wajar ? '' : '<p class="text-xs text-red-800/80 mt-2">Periksa nota yang belum dicatat, kembalian, atau pengeluaran yang lupa dimasukkan.</p>'}
+        </div>`;
+    } else {
+      ring.innerHTML += `
+        <div class="mt-3 rounded-xl bg-amber-50 border border-amber-200 p-4">
+          <p class="font-semibold text-sm text-amber-800"><i class="fas fa-triangle-exclamation mr-1"></i>
+            Kas hari ini belum dihitung</p>
+          <p class="text-xs text-amber-800/80 mt-1">Hitung uang fisik di kasir, lalu isi form di bawah.</p>
+        </div>`;
+    }
+
+    // Riwayat
+    if (!riw) return;
+    if (!(d.riwayat || []).length) {
+      riw.innerHTML = '<p class="text-sm text-sumi/40">Belum ada riwayat opname.</p>';
+      return;
+    }
+    riw.innerHTML = `
+      <p class="text-xs uppercase tracking-wide text-sumi/50">Riwayat opname</p>
+      ${d.riwayat.map((r) => {
+        const sel = Number(r.selisih);
+        const ok = Math.abs(sel) <= Number(d.toleransi || 0);
+        return `<div class="flex flex-wrap items-center gap-2 text-xs rounded-lg border border-sumi/10 p-2.5">
+          <span class="font-semibold">${escHtml(r.tanggal)}</span>
+          <span class="text-sumi/50">sistem ${rupiah(r.saldo_sistem)}</span>
+          <span class="text-sumi/30">·</span>
+          <span class="text-sumi/50">fisik ${rupiah(r.saldo_fisik)}</span>
+          ${r.catatan ? `<span class="text-sumi/40 italic">"${escHtml(r.catatan)}"</span>` : ''}
+          <span class="ml-auto font-semibold ${ok ? 'text-green-700' : 'text-red-700'}">${rupiah(sel)}</span>
+        </div>`;
+      }).join('')}`;
+  } catch (e) {
+    ring.innerHTML = `<p class="text-sm text-red-700">${escHtml(e.message)}</p>`;
+  }
+}
+
+document.getElementById('btn-opname-segar')?.addEventListener('click', () => loadOpname());
+
+document.getElementById('form-opname')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const b = e.target.querySelector('button[type="submit"]');
+  b.disabled = true;
+  try {
+    const d = await api('/api/admin/kas/opname', {
+      method: 'POST',
+      body: JSON.stringify({
+        tanggal: document.getElementById('opname-tanggal').value,
+        saldo_fisik: parseInt(document.getElementById('opname-fisik').value || '0', 10),
+        catatan: document.getElementById('opname-catatan').value
+      })
+    });
+    const sel = Number(d.selisih);
+    if (d.wajar) toast(`Opname tersimpan. Selisih ${rupiah(sel)} — masih wajar.`);
+    else toast(`Opname tersimpan. SELISIH ${rupiah(Math.abs(sel))} (${sel < 0 ? 'kurang' : 'lebih'}) — segera diperiksa!`, false);
+    await Promise.all([loadOpname(), jalankanPeriksa()]);
+  } catch (err) { toast(err.message, false); }
+  b.disabled = false;
+});
+
+// ---------- Aset Tetap & Penyusutan ----------
+const labelKategoriAset = {
+  bangunan: 'Bangunan / Kumbung', peralatan: 'Peralatan', mesin: 'Mesin',
+  kendaraan: 'Kendaraan', lainnya: 'Lainnya'
+};
+const labelStatusAset = {
+  aktif: 'Aktif disusutkan', lunas_susut: 'Selesai disusutkan',
+  dijual: 'Sudah dijual', rusak: 'Rusak / tidak dipakai'
+};
+
+async function loadAset() {
+  const box = document.getElementById('aset-list');
+  const tot = document.getElementById('aset-total');
+  if (!box) return;
+  try {
+    const d = await api('/api/admin/aset');
+    const isOwner = ME?.role === 'owner';
+    const t = d.total || {};
+
+    if (tot) tot.innerHTML = `
+      <div class="rounded-xl border border-sumi/10 bg-washi p-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <div><p class="text-xs text-sumi/45">Total harga beli</p><p class="font-semibold">${rupiah(t.hargaBeli)}</p></div>
+          <div><p class="text-xs text-sumi/45">Sudah disusutkan</p><p class="font-semibold text-red-700">${rupiah(t.akumulasi)}</p></div>
+          <div><p class="text-xs text-sumi/45">Nilai buku sekarang</p><p class="font-semibold text-matcha">${rupiah(t.nilaiBuku)}</p></div>
+          <div><p class="text-xs text-sumi/45">Penyusutan / bulan</p><p class="font-semibold">${rupiah(t.susutBulanan)}</p></div>
+        </div>
+      </div>`;
+
+    if (!(d.aset || []).length) {
+      box.innerHTML = '<p class="text-sm text-sumi/40">Belum ada aset tetap. Tambahkan lewat form di bawah.</p>';
+      return;
+    }
+
+    box.innerHTML = d.aset.map((a) => {
+      const persen = a.harga_beli > 0 ? Math.min(100, Math.round((a.akumulasi / a.harga_beli) * 100)) : 0;
+      const aktif = a.status === 'aktif';
+      return `
+      <div class="rounded-xl border border-sumi/10 p-3.5">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div class="min-w-0">
+            <p class="font-semibold text-sm">${escHtml(a.nama)}
+              <span class="ml-1 text-[10px] bg-sumi/10 px-1.5 py-0.5 rounded-full align-middle">${escHtml(labelKategoriAset[a.kategori] || a.kategori)}</span>
+              <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded-full align-middle ${aktif ? 'bg-green-100 text-green-800' : 'bg-sumi/10 text-sumi/60'}">${escHtml(labelStatusAset[a.status] || a.status)}</span>
+            </p>
+            <p class="text-xs text-sumi/45 mt-0.5">Dibeli ${escHtml(a.tanggal_beli)} · ${rupiah(a.harga_beli)} · umur ${a.umur_bulan} bln${a.nilai_residu > 0 ? ` · sisa akhir ${rupiah(a.nilai_residu)}` : ''}</p>
+            ${a.catatan ? `<p class="text-xs text-sumi/40 italic mt-0.5">"${escHtml(a.catatan)}"</p>` : ''}
+          </div>
+          ${isOwner ? `<div class="flex gap-1.5 shrink-0">
+            <button type="button" class="btn-aset-status text-xs border border-sumi/20 rounded-full px-2.5 py-1 hover:border-vermillion" data-id="${a.id}" data-status="${escHtml(a.status)}"><i class="fas fa-pen-to-square"></i></button>
+            <button type="button" class="btn-aset-hapus text-xs border border-sumi/20 rounded-full px-2.5 py-1 hover:border-red-500 hover:text-red-600" data-id="${a.id}" data-nama="${escHtml(a.nama)}"><i class="fas fa-trash"></i></button>
+          </div>` : ''}
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mt-3 pt-3 border-t border-sumi/10">
+          <div><p class="text-sumi/45">Susut/bulan</p><p class="font-semibold">${rupiah(a.susutPerBulan)}</p></div>
+          <div><p class="text-sumi/45">Akumulasi</p><p class="font-semibold text-red-700">${rupiah(a.akumulasi)}</p></div>
+          <div><p class="text-sumi/45">Nilai buku</p><p class="font-semibold text-matcha">${rupiah(a.nilaiBuku)}</p></div>
+          <div><p class="text-sumi/45">Sisa umur</p><p class="font-semibold">${a.sisaBulan} bln</p></div>
+        </div>
+        <div class="mt-2">
+          <div class="h-1.5 bg-sumi/10 rounded-full overflow-hidden">
+            <div class="h-full bg-vermillion rounded-full" style="width:${persen}%"></div>
+          </div>
+          <p class="text-[10px] text-sumi/40 mt-1">${persen}% nilai sudah disusutkan (${a.bulan_disusut} bulan tercatat)</p>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Tombol ubah status
+    box.querySelectorAll('.btn-aset-status').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const pilih = prompt('Status baru — tulis salah satu:\naktif / lunas_susut / dijual / rusak', b.dataset.status);
+        if (!pilih) return;
+        try {
+          await api(`/api/admin/aset/${b.dataset.id}/status`, {
+            method: 'PUT', body: JSON.stringify({ status: pilih.trim() })
+          });
+          toast('Status aset diperbarui.');
+          await loadAset();
+        } catch (e) { toast(e.message, false); }
+      });
+    });
+
+    // Tombol hapus
+    box.querySelectorAll('.btn-aset-hapus').forEach((b) => {
+      b.addEventListener('click', async () => {
+        if (!confirm(`Hapus aset "${b.dataset.nama}"?\n\nAset yang sudah pernah disusutkan TIDAK bisa dihapus (jejak akuntansi dijaga).`)) return;
+        try {
+          await api(`/api/admin/aset/${b.dataset.id}`, { method: 'DELETE' });
+          toast('Aset dihapus.');
+          await loadAset();
+        } catch (e) { toast(e.message, false); }
+      });
+    });
+  } catch (e) {
+    box.innerHTML = `<p class="text-sm text-red-700">${escHtml(e.message)}</p>`;
+  }
+}
+
+document.getElementById('btn-aset-segar')?.addEventListener('click', () => loadAset());
+
+document.getElementById('form-aset')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const b = e.target.querySelector('button[type="submit"]');
+  b.disabled = true;
+  try {
+    const d = await api('/api/admin/aset', {
+      method: 'POST',
+      body: JSON.stringify({
+        nama: document.getElementById('aset-nama').value,
+        kategori: document.getElementById('aset-kategori').value,
+        tanggal_beli: document.getElementById('aset-tanggal').value,
+        harga_beli: parseInt(document.getElementById('aset-harga').value || '0', 10),
+        nilai_residu: parseInt(document.getElementById('aset-residu').value || '0', 10),
+        umur_bulan: parseInt(document.getElementById('aset-umur').value || '60', 10),
+        catatan: document.getElementById('aset-catatan').value
+      })
+    });
+    toast(`Aset ditambahkan. Penyusutan ${rupiah(d.susutPerBulan)}/bulan.`);
+    e.target.reset();
+    document.getElementById('aset-residu').value = '0';
+    document.getElementById('aset-umur').value = '60';
+    await loadAset();
+  } catch (err) { toast(err.message, false); }
+  b.disabled = false;
+});
+
+// ---------- Ekspor Buku Besar (CSV) ----------
+async function loadEksporRiwayat() {
+  const box = document.getElementById('ekspor-riwayat');
+  if (!box) return;
+  const elP = document.getElementById('ekspor-periode');
+  if (elP && !elP.value) elP.value = bulanIniWIBstr();
+  try {
+    const d = await api('/api/admin/buku/ekspor/riwayat');
+    if (!(d.riwayat || []).length) {
+      box.innerHTML = '<p class="text-sm text-sumi/40">Belum pernah ekspor.</p>';
+      return;
+    }
+    box.innerHTML = `
+      <p class="text-xs uppercase tracking-wide text-sumi/50 mb-2">Riwayat ekspor</p>
+      <div class="space-y-1.5">
+        ${d.riwayat.map((r) => `
+          <div class="flex flex-wrap items-center gap-2 text-xs rounded-lg border border-sumi/10 p-2.5">
+            <span class="font-semibold">${escHtml(labelPeriode(r.periode))}</span>
+            <span class="text-sumi/50">${r.baris} baris</span>
+            <span class="text-sumi/30">·</span>
+            <span class="text-sumi/40">${escHtml(String(r.created_at || '').slice(0, 16))}</span>
+            <span class="ml-auto uppercase text-sumi/40">${escHtml(r.format || 'csv')}</span>
+          </div>`).join('')}
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<p class="text-sm text-red-700">${escHtml(e.message)}</p>`;
+  }
+}
+
+document.getElementById('btn-ekspor')?.addEventListener('click', async () => {
+  const periode = document.getElementById('ekspor-periode').value;
+  if (!periode) return toast('Pilih bulan dulu.', false);
+  const b = document.getElementById('btn-ekspor');
+  b.disabled = true;
+  try {
+    // Diunduh lewat fetch agar error server bisa ditampilkan sebagai toast,
+    // bukan halaman JSON mentah di tab baru.
+    const r = await fetch(`/api/admin/buku/ekspor?periode=${encodeURIComponent(periode)}`, { credentials: 'same-origin' });
+    if (!r.ok) {
+      let msg = 'Ekspor gagal.';
+      try { msg = (await r.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `buku-besar-${periode}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('File CSV terunduh.');
+    await loadEksporRiwayat();
+  } catch (e) { toast(e.message, false); }
+  b.disabled = false;
 });

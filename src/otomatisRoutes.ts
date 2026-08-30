@@ -73,6 +73,7 @@ otomatisRoutes.get('/api/admin/otomatis', requireAuth(['owner', 'admin']), async
   const { results } = await db.prepare(
     `SELECT key, value FROM pengaturan
      WHERE key LIKE 'otomatis_%' OR key LIKE 'absen_auto%' OR key LIKE 'openwa_notif%'
+        OR key LIKE 'kas_opname%'
         OR key = 'openwa_jam_pengingat' OR key = 'openwa_pengingat_terakhir'`
   ).all<any>()
   const m: Record<string, string> = {}

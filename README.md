@@ -81,8 +81,16 @@
 ### 4. Lonceng Notifikasi Pembukuan
 `GET /api/admin/notifikasi` kini juga melaporkan: perlu tutup buku, baglog/gaji belum dibukukan, dan status kas opname hari ini.
 
+### 5. Tampilan Dashboard (tab Otomatisasi)
+Semua fitur di atas sudah punya kartunya sendiri — tidak perlu lagi lewat API:
+- **Kartu Kas Opname** — saldo sistem, rincian masuk/keluar, status hari ini (hijau cocok / merah selisih), form input, dan riwayat.
+- **Kartu Aset Tetap** — ringkasan nilai buku, daftar aset dengan bar progres penyusutan, form tambah, tombol ubah status & hapus (khusus owner).
+- **Kartu Ekspor Buku Besar** — pilih bulan lalu unduh CSV, plus riwayat ekspor.
+- **3 kontrol baru** di form aturan: sakelar penyusutan otomatis, sakelar pengingat opname, dan input toleransi selisih kas.
+
 ### Angka Fase 13
 - Migrasi: **13** file | Tugas otomatis: **14** | Pemeriksaan integritas: **18**
+- Skor kesehatan sistem setelah semua fitur aktif: **100/100**
 
 ### Belum dikerjakan (butuh keputusan pemilik)
 - **Jurnal double-entry penuh** (debit/kredit + neraca formal) — perombakan struktur, bukan tambalan.

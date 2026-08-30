@@ -39,7 +39,13 @@ module.exports = {
     'text-amber-600', 'text-amber-700', 'text-blue-600',
     'text-green-700', 'text-red-700',
     'border-green-200', 'border-sumi/10', 'bg-sumi/5',
-    'text-sumi/30', 'text-sumi/35', 'text-sumi/55'
+    'text-sumi/30', 'text-sumi/35', 'text-sumi/55',
+    // Fase 13 — kartu kas opname, aset tetap & ekspor buku besar
+    'border-red-200', 'border-amber-200', 'bg-green-100',
+    'text-green-800', 'text-red-800', 'text-amber-800',
+    'text-red-800/80', 'text-amber-800/80',
+    'text-sumi/40', 'text-sumi/45', 'text-sumi/50', 'text-sumi/60',
+    'bg-vermillion', 'bg-matcha', 'text-matcha'
   ],
   plugins: []
 }

@@ -1143,6 +1143,11 @@ export const adminPage = () => `<!DOCTYPE html>
               <input id="oto-tutup-tgl" type="number" min="1" max="28" class="form-input">
               <p class="text-xs text-sumi/40 mt-1">Buku bulan lalu dikunci pada tanggal ini.</p>
             </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="oto-opname-tol">Toleransi selisih kas (Rp)</label>
+              <input id="oto-opname-tol" type="number" min="0" step="1000" class="form-input">
+              <p class="text-xs text-sumi/40 mt-1">Selisih di atas ini dianggap masalah serius.</p>
+            </div>
           </div>
           <div class="space-y-2 pt-2 border-t border-sumi/10">
             <label class="flex items-center gap-2 text-sm"><input id="oto-alpa" type="checkbox" class="w-4 h-4"> Tandai alpa otomatis bila karyawan tidak absen</label>
@@ -1159,6 +1164,8 @@ export const adminPage = () => `<!DOCTYPE html>
             <label class="flex items-center gap-2 text-sm"><input id="oto-tutupbuku" type="checkbox" class="w-4 h-4"> Tutup buku bulan lalu otomatis</label>
             <label class="flex items-center gap-2 text-sm"><input id="oto-rekap" type="checkbox" class="w-4 h-4"> Kirim rekap laba/rugi bulanan via WhatsApp</label>
             <label class="flex items-center gap-2 text-sm"><input id="oto-rekonkas" type="checkbox" class="w-4 h-4"> Periksa kecocokan kas gateway vs pembukuan</label>
+            <label class="flex items-center gap-2 text-sm"><input id="oto-penyusutan" type="checkbox" class="w-4 h-4"> Bukukan penyusutan aset tetap tiap bulan</label>
+            <label class="flex items-center gap-2 text-sm"><input id="oto-opname" type="checkbox" class="w-4 h-4"> Ingatkan hitung uang kas (opname) via WhatsApp</label>
           </div>
           <button type="submit" class="btn-tambah w-full"><i class="fas fa-save mr-1"></i>Simpan Aturan</button>
         </form>
@@ -1196,6 +1203,125 @@ export const adminPage = () => `<!DOCTYPE html>
             </div>
           </div>
           <div id="rekon-hasil" class="text-sm text-sumi/40">Pilih bulan lalu tekan <strong>Periksa</strong>.</div>
+        </div>
+
+        <!-- Fase 13: Kas Opname -->
+        <div class="bg-white rounded-2xl shadow p-6">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+            <div>
+              <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-cash-register text-vermillion mr-2"></i>Kas Opname</h2>
+              <p class="text-sm text-sumi/50 mt-1">Hitung uang fisik di kasir, lalu bandingkan dengan catatan sistem.</p>
+            </div>
+            <button id="btn-opname-segar" type="button" class="text-sm border border-sumi/20 hover:bg-washi px-4 py-2 rounded-full transition"><i class="fas fa-rotate mr-1"></i>Segarkan</button>
+          </div>
+          <p class="text-sm text-sumi/50 bg-washi rounded-lg p-3 mb-4">
+            <i class="fas fa-circle-info mr-1 text-vermillion"></i>
+            Ini cara paling ampuh menangkap uang hilang. Hitung uang di kasir, masukkan angkanya,
+            sistem langsung memberi tahu selisihnya. Angka yang Anda simpan jadi <strong>titik awal</strong>
+            perhitungan hari berikutnya, jadi selisih tidak dihitung dua kali.
+          </p>
+          <div id="opname-ringkas" class="mb-4">
+            <p class="text-sm text-sumi/40"><i class="fas fa-spinner fa-spin mr-1"></i>Menghitung saldo kas…</p>
+          </div>
+          <form id="form-opname" class="grid md:grid-cols-3 gap-3 items-end border-t border-sumi/10 pt-4">
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="opname-tanggal">Tanggal</label>
+              <input id="opname-tanggal" type="date" class="form-input" required>
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="opname-fisik">Uang fisik dihitung (Rp)</label>
+              <input id="opname-fisik" type="number" min="0" step="500" class="form-input" placeholder="0" required>
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="opname-catatan">Catatan</label>
+              <input id="opname-catatan" type="text" class="form-input" placeholder="opsional" maxlength="200">
+            </div>
+            <div class="md:col-span-3">
+              <button type="submit" class="btn-tambah w-full"><i class="fas fa-check mr-1"></i>Simpan Opname</button>
+            </div>
+          </form>
+          <div id="opname-riwayat" class="mt-4 space-y-2"></div>
+        </div>
+
+        <!-- Fase 13: Aset Tetap & Penyusutan -->
+        <div class="bg-white rounded-2xl shadow p-6">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+            <div>
+              <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-warehouse text-matcha mr-2"></i>Aset Tetap &amp; Penyusutan</h2>
+              <p class="text-sm text-sumi/50 mt-1">Barang tahan lama: kumbung, rak, mesin, kendaraan.</p>
+            </div>
+            <button id="btn-aset-segar" type="button" class="text-sm border border-sumi/20 hover:bg-washi px-4 py-2 rounded-full transition"><i class="fas fa-rotate mr-1"></i>Segarkan</button>
+          </div>
+          <p class="text-sm text-sumi/50 bg-washi rounded-lg p-3 mb-4">
+            <i class="fas fa-circle-info mr-1 text-vermillion"></i>
+            Nilai barang turun tiap bulan (penyusutan) supaya laba tidak terlihat lebih besar dari kenyataan.
+            Penyusutan <strong>tidak mengurangi uang kas</strong> karena uangnya tidak keluar dari kasir —
+            jadi kas opname tetap akurat.
+          </p>
+          <div id="aset-total" class="mb-4"></div>
+          <div id="aset-list" class="space-y-2 mb-4">
+            <p class="text-sm text-sumi/40"><i class="fas fa-spinner fa-spin mr-1"></i>Memuat aset…</p>
+          </div>
+          <form id="form-aset" class="grid md:grid-cols-3 gap-3 items-end border-t border-sumi/10 pt-4">
+            <div class="md:col-span-2">
+              <label class="block text-sm mb-1 font-medium" for="aset-nama">Nama aset</label>
+              <input id="aset-nama" type="text" class="form-input" placeholder="Rak kumbung besi" maxlength="120" required>
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="aset-kategori">Kategori</label>
+              <select id="aset-kategori" class="form-input">
+                <option value="peralatan">Peralatan</option>
+                <option value="bangunan">Bangunan / Kumbung</option>
+                <option value="mesin">Mesin</option>
+                <option value="kendaraan">Kendaraan</option>
+                <option value="lainnya">Lainnya</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="aset-tanggal">Tanggal beli</label>
+              <input id="aset-tanggal" type="date" class="form-input" required>
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="aset-harga">Harga beli (Rp)</label>
+              <input id="aset-harga" type="number" min="1" step="1000" class="form-input" required>
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="aset-residu">Nilai sisa akhir (Rp)</label>
+              <input id="aset-residu" type="number" min="0" step="1000" class="form-input" value="0">
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="aset-umur">Umur pakai (bulan)</label>
+              <input id="aset-umur" type="number" min="1" max="600" class="form-input" value="60" required>
+              <p class="text-xs text-sumi/40 mt-1">60 bulan = 5 tahun.</p>
+            </div>
+            <div>
+              <label class="block text-sm mb-1 font-medium" for="aset-catatan">Catatan</label>
+              <input id="aset-catatan" type="text" class="form-input" placeholder="opsional" maxlength="200">
+            </div>
+            <div class="flex items-end">
+              <button type="submit" class="btn-tambah w-full"><i class="fas fa-plus mr-1"></i>Tambah Aset</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Fase 13: Ekspor Buku Besar -->
+        <div class="bg-white rounded-2xl shadow p-6">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+            <div>
+              <h2 class="font-serifjp font-semibold text-lg"><i class="fas fa-file-csv text-kin mr-2"></i>Ekspor Buku Besar</h2>
+              <p class="text-sm text-sumi/50 mt-1">Unduh semua transaksi satu bulan jadi file Excel/CSV.</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <input id="ekspor-periode" type="month" class="form-input w-auto">
+              <button id="btn-ekspor" type="button" class="btn-tambah-kin"><i class="fas fa-download mr-1"></i>Unduh CSV</button>
+            </div>
+          </div>
+          <p class="text-sm text-sumi/50 bg-washi rounded-lg p-3 mb-4">
+            <i class="fas fa-circle-info mr-1 text-vermillion"></i>
+            Berisi penjualan, pemasukan lain, pengeluaran, dan pembayaran piutang — urut tanggal dengan
+            <strong>saldo jalan</strong>. Simpan salinannya di luar server sebagai cadangan.
+          </p>
+          <div id="ekspor-riwayat" class="text-sm text-sumi/40"></div>
         </div>
 
         <!-- Hari libur -->
