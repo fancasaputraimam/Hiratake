@@ -7,7 +7,7 @@ import {
 } from './auth'
 // ===== Integrasi OpenWA (WhatsApp API Gateway) =====
 import { waRoutes } from './waRoutes'
-import { getWAConfig, siapKirim, type OpenWAEnv } from './openwa'
+import { getWAConfig, siapKirim, normalWA, type OpenWAEnv } from './openwa'
 import { saring, itiRahasia } from './rahasia'
 import {
   notifPesananBaru, notifStatusPesanan, notifNota,
@@ -50,6 +50,22 @@ const app = new Hono<{ Bindings: Bindings; Variables: { user: SessionUser } }>()
 // Escape HTML untuk nilai yang dirender ke halaman (anti-XSS)
 const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, (m) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m] as string))
+
+/** Tanggal wajib YYYY-MM-DD (kalau tidak, baris hilang dari query bulanan). */
+const tglValidId = (t: any): boolean => /^\d{4}-\d{2}-\d{2}$/.test(String(t || ''))
+/**
+ * Coerce nilai rupiah → integer >= 0, atau NaN bila tak valid.
+ * Membuang pemisah ribuan (id-ID menulis "15.000" = lima belas ribu). Nilai
+ * negatif ditolak.
+ */
+const rupiahBulat = (v: any): number => {
+  const s = String(v ?? '').trim()
+  if (/^-/.test(s)) return -1
+  const digit = s.replace(/\D/g, '')
+  if (!digit) return NaN
+  const n = parseInt(digit, 10)
+  return Number.isFinite(n) ? n : NaN
+}
 
 // Security headers dasar untuk semua respons HTML
 app.use('*', async (c, next) => {
@@ -593,25 +609,37 @@ app.get('/admin', async (c) => {
 
 // ============ API AUTENTIKASI ============
 
+// Hash dummy (PBKDF2 valid tapi tak pernah cocok) — dipakai saat user tidak
+// ada, supaya waktu respons sama seperti password salah (anti timing-enum).
+const HASH_DUMMY = 'pbkdf2$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
+
 app.post('/api/auth/login', async (c) => {
   const { username, password } = await c.req.json<{ username: string; password: string }>()
   if (!username || !password) return c.json({ error: 'Username dan kata sandi wajib diisi.' }, 400)
   const uname = username.toLowerCase()
+  const ip = (c.req.header('cf-connecting-ip') || c.req.header('x-real-ip')
+    || (c.req.header('x-forwarded-for') || '').split(',')[0] || '').trim().slice(0, 64)
 
-  // Rate limit: maksimal 5 percobaan gagal per username dalam 5 menit (anti brute-force)
-  const gagal = await c.env.DB.prepare(
-    "SELECT COUNT(*) v FROM login_attempts WHERE username = ? AND sukses = 0 AND created_at > datetime('now','-5 minutes')"
-  ).bind(uname).first<any>()
-  if ((gagal?.v ?? 0) >= 5) {
-    return c.json({ error: 'Terlalu banyak percobaan gagal. Tunggu 5 menit lalu coba lagi.' }, 429)
+  // Rate limit PER-IP (bukan per-username): 10 gagal / 5 menit. Per-username akan
+  // membiarkan penyerang mengunci akun orang lain hanya dengan menembak namanya.
+  if (ip) {
+    const gagal = await c.env.DB.prepare(
+      "SELECT COUNT(*) v FROM login_attempts WHERE ip = ? AND sukses = 0 AND created_at > datetime('now','-5 minutes')"
+    ).bind(ip).first<any>()
+    if ((gagal?.v ?? 0) >= 10) {
+      return c.json({ error: 'Terlalu banyak percobaan gagal dari perangkat ini. Tunggu 5 menit lalu coba lagi.' }, 429)
+    }
   }
 
   const user = await c.env.DB.prepare(
     'SELECT id, username, password_hash, nama, role, aktif FROM users WHERE username = ?'
   ).bind(uname).first<any>()
 
-  if (!user || !user.aktif || !(await verifyPassword(password, user.password_hash))) {
-    await c.env.DB.prepare('INSERT INTO login_attempts (username, sukses) VALUES (?, 0)').bind(uname).run()
+  // Selalu jalankan verifyPassword (pakai hash dummy bila user tak ada) agar
+  // waktu respons tidak membocorkan username mana yang terdaftar.
+  const cocok = await verifyPassword(password, user?.password_hash || HASH_DUMMY)
+  if (!user || !user.aktif || !cocok) {
+    await c.env.DB.prepare('INSERT INTO login_attempts (username, sukses, ip) VALUES (?, 0, ?)').bind(uname, ip).run()
     return c.json({ error: 'Username atau kata sandi salah.' }, 401)
   }
 
@@ -626,7 +654,7 @@ app.post('/api/auth/login', async (c) => {
   const token = generateToken()
   await c.env.DB.batch([
     c.env.DB.prepare("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").bind(token, user.id),
-    c.env.DB.prepare('INSERT INTO login_attempts (username, sukses) VALUES (?, 1)').bind(uname),
+    c.env.DB.prepare('INSERT INTO login_attempts (username, sukses, ip) VALUES (?, 1, ?)').bind(uname, ip),
     // Housekeeping ringan: bersihkan sesi kedaluwarsa & catatan login lama
     c.env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')"),
     c.env.DB.prepare("DELETE FROM login_attempts WHERE created_at < datetime('now','-1 day')")
@@ -723,15 +751,11 @@ app.get('/api/admin/ringkasan', requireAuth(), async (c) => {
   const targetCfg = await db.prepare("SELECT value FROM pengaturan WHERE key='target_kg_bulanan'").first<any>()
   const targetKg = parseFloat(targetCfg?.value || '0') || 0
 
-  // Lazy-cron: Cloudflare hosted deploy tidak mendukung cron trigger, jadi semua
-  // tugas harian "menempel" pada request dashboard pertama tiap hari:
-  // pengingat piutang, auto-alpa absensi, ringkasan pagi WA, housekeeping, tagihan kedaluwarsa.
+  // Lazy-cron: satu pintu. `jalankanOtomatisasi` mencakup pengingat piutang,
+  // auto-alpa, ringkasan pagi, housekeeping, tagihan kedaluwarsa — semuanya di
+  // balik satu kunci atomik, jadi middleware denyut tidak menjalankannya dobel.
   c.executionCtx?.waitUntil?.(
-    Promise.allSettled([
-      jalankanPengingatHarian(c.env as OpenWAEnv),
-      bersihkanBayarKedaluwarsa(c.env as OpenWAEnv),
-      jalankanOtomatisasi(c.env as OpenWAEnv)
-    ]).then(() => {})
+    Promise.resolve(jalankanOtomatisasi(c.env as OpenWAEnv, 'ringkasan')).catch(() => {})
   )
   return c.json({
     targetKg,
@@ -837,10 +861,11 @@ app.get('/api/admin/panen', requireAuth(), async (c) => {
 
 app.post('/api/admin/panen', requireAuth(), async (c) => {
   const { tanggal, batch_id, grade_a, grade_b, grade_c, susut_kg, catatan } = await c.req.json()
-  const ga = parseFloat(grade_a) || 0, gb = parseFloat(grade_b) || 0, gc = parseFloat(grade_c) || 0
-  const susut = parseFloat(susut_kg) || 0
+  const ga = Math.max(0, parseFloat(grade_a) || 0), gb = Math.max(0, parseFloat(grade_b) || 0), gc = Math.max(0, parseFloat(grade_c) || 0)
+  const susut = Math.max(0, parseFloat(susut_kg) || 0)
   const total = Math.round((ga + gb + gc) * 100) / 100
-  if (!tanggal || total <= 0) return c.json({ error: 'Tanggal dan minimal satu grade (A/B/C) wajib diisi.' }, 400)
+  if (!tglValidId(tanggal)) return c.json({ error: 'Tanggal wajib format YYYY-MM-DD.' }, 400)
+  if (total <= 0) return c.json({ error: 'Minimal satu grade (A/B/C) wajib diisi dengan angka positif.' }, 400)
   const tutupPanen = await periodeTertutup(c.env.DB, tanggal)
   if (tutupPanen) return c.json({ error: `Buku periode ${tutupPanen} sudah ditutup. Buka kembali dulu di tab Otomatisasi.` }, 400)
   if (batch_id) {
@@ -964,7 +989,14 @@ app.delete('/api/admin/penjualan/:id', requireAuth(['owner', 'admin']), async (c
       .bind(j.pesanan_id, id).first<any>()
     if ((sisa?.n ?? 0) === 0) {
       pesananDilepas = Number(j.pesanan_id)
+      const psKode = await db.prepare('SELECT kode FROM pesanan WHERE id = ?').bind(j.pesanan_id).first<any>()
       stmts.push(db.prepare("UPDATE pesanan SET penjualan_dibuat = 0, status = CASE WHEN status='selesai' THEN 'diproses' ELSE status END WHERE id = ?").bind(j.pesanan_id))
+      // Ikut hapus baris ongkir/biaya otomatis yang tertaut pesanan ini, supaya
+      // kalau nanti diproses ulang tidak ada yang dobel (dan tidak jadi yatim).
+      if (psKode?.kode) {
+        stmts.push(db.prepare("DELETE FROM pemasukan_lain WHERE sumber IN ('auto:ongkir','auto:biaya_admin') AND no_bukti = ?").bind(psKode.kode))
+        stmts.push(db.prepare("DELETE FROM pengeluaran WHERE sumber = 'auto:gateway' AND no_bukti = ?").bind(psKode.kode))
+      }
     }
   }
   await db.batch(stmts)
@@ -1013,20 +1045,36 @@ app.get('/api/admin/produk', requireAuth(['owner', 'admin']), async (c) => {
   return c.json({ produk: results })
 })
 
+// Berat kg boleh desimal (0.25). Harga selalu rupiah bulat.
+const beratKg = (v: any): number => {
+  if (v == null || v === '') return 0
+  const n = parseFloat(String(v).replace(',', '.'))
+  return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : NaN
+}
+
 app.post('/api/admin/produk', requireAuth(['owner', 'admin']), async (c) => {
   const { nama, jp, harga, satuan, deskripsi, badge, berat_kg } = await c.req.json()
-  if (!nama || harga == null || !satuan) return c.json({ error: 'Nama, harga, dan satuan wajib diisi.' }, 400)
+  const h = rupiahBulat(harga)
+  const bk = beratKg(berat_kg)
+  if (!String(nama || '').trim() || !String(satuan || '').trim()) return c.json({ error: 'Nama dan satuan wajib diisi.' }, 400)
+  if (!Number.isFinite(h) || h <= 0) return c.json({ error: 'Harga harus angka lebih dari 0.' }, 400)
+  if (!Number.isFinite(bk) || bk < 0) return c.json({ error: 'Berat kg tidak valid.' }, 400)
   await c.env.DB.prepare(
     'INSERT INTO produk (nama, jp, harga, satuan, deskripsi, badge, berat_kg) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null, berat_kg || 0).run()
+  ).bind(String(nama).trim().slice(0, 80), jp || '', h, String(satuan).trim().slice(0, 20), deskripsi || '', badge || null, bk).run()
   return c.json({ sukses: true })
 })
 
 app.put('/api/admin/produk/:id', requireAuth(['owner', 'admin']), async (c) => {
   const { nama, jp, harga, satuan, deskripsi, badge, aktif, berat_kg } = await c.req.json()
+  const h = rupiahBulat(harga)
+  const bk = beratKg(berat_kg)
+  if (!String(nama || '').trim() || !String(satuan || '').trim()) return c.json({ error: 'Nama dan satuan wajib diisi.' }, 400)
+  if (!Number.isFinite(h) || h <= 0) return c.json({ error: 'Harga harus angka lebih dari 0.' }, 400)
+  if (!Number.isFinite(bk) || bk < 0) return c.json({ error: 'Berat kg tidak valid.' }, 400)
   await c.env.DB.prepare(
     'UPDATE produk SET nama=?, jp=?, harga=?, satuan=?, deskripsi=?, badge=?, aktif=?, berat_kg=? WHERE id=?'
-  ).bind(nama, jp || '', harga, satuan, deskripsi || '', badge || null, aktif ? 1 : 0, berat_kg || 0, c.req.param('id')).run()
+  ).bind(String(nama).trim().slice(0, 80), jp || '', h, String(satuan).trim().slice(0, 20), deskripsi || '', badge || null, aktif ? 1 : 0, bk, c.req.param('id')).run()
   return c.json({ sukses: true })
 })
 
@@ -1058,14 +1106,20 @@ app.get('/api/admin/users', requireAuth(['owner']), async (c) => {
 })
 
 app.post('/api/admin/users', requireAuth(['owner']), async (c) => {
-  const { username, nama, password, role } = await c.req.json()
-  if (!username || !nama || !password || !role) return c.json({ error: 'Semua kolom wajib diisi.' }, 400)
+  const b = await c.req.json()
+  const uname = String(b.username || '').toLowerCase().trim()
+  const nama = String(b.nama || '').trim().slice(0, 60)
+  const password = String(b.password || '')
+  const role = b.role
+  if (!uname || !nama || !password || !role) return c.json({ error: 'Semua kolom wajib diisi.' }, 400)
+  if (!/^[a-z0-9._-]{3,32}$/.test(uname)) return c.json({ error: 'Username 3–32 karakter, hanya huruf kecil/angka/titik/garis.' }, 400)
   if (password.length < 6) return c.json({ error: 'Kata sandi minimal 6 karakter.' }, 400)
   if (!['owner', 'admin', 'karyawan'].includes(role)) return c.json({ error: 'Peran tidak valid.' }, 400)
-  const ada = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username.toLowerCase()).first()
+  const ada = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(uname).first()
   if (ada) return c.json({ error: 'Username sudah terpakai.' }, 409)
-  await c.env.DB.prepare('INSERT INTO users (username, password_hash, nama, role) VALUES (?, ?, ?, ?)')
-    .bind(username.toLowerCase(), await hashPassword(password), nama, role).run()
+  const r = await c.env.DB.prepare('INSERT INTO users (username, password_hash, nama, role) VALUES (?, ?, ?, ?)')
+    .bind(uname, await hashPassword(password), nama, role).run()
+  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'users', r.meta.last_row_id, `Buat pengguna ${uname} (${role})`)
   return c.json({ sukses: true })
 })
 
@@ -1073,16 +1127,26 @@ app.put('/api/admin/users/:id/status', requireAuth(['owner']), async (c) => {
   const id = parseInt(c.req.param('id'))
   if (id === c.get('user').id) return c.json({ error: 'Tidak bisa menonaktifkan akun sendiri.' }, 400)
   const { aktif } = await c.req.json()
+  const target = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(id).first<any>()
   await c.env.DB.prepare('UPDATE users SET aktif = ? WHERE id = ?').bind(aktif ? 1 : 0, id).run()
   if (!aktif) await c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id).run()
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'users', id,
+    `${aktif ? 'Aktifkan' : 'Nonaktifkan'} pengguna ${target?.username || id}`)
   return c.json({ sukses: true })
 })
 
 app.put('/api/admin/users/:id/password', requireAuth(['owner']), async (c) => {
   const { password } = await c.req.json()
   if (!password || password.length < 6) return c.json({ error: 'Kata sandi minimal 6 karakter.' }, 400)
+  const id = c.req.param('id')
+  const target = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(id).first<any>()
   await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-    .bind(await hashPassword(password), c.req.param('id')).run()
+    .bind(await hashPassword(password), id).run()
+  // Reset paksa: batalkan semua sesi pengguna itu (kecuali bila mereset diri sendiri)
+  if (parseInt(id) !== c.get('user').id) {
+    await c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id).run()
+  }
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'users', id, `Reset kata sandi pengguna ${target?.username || id}`)
   return c.json({ sukses: true })
 })
 
@@ -1103,19 +1167,37 @@ app.get('/api/admin/baglog', requireAuth(), async (c) => {
 // Buat batch baru (owner & admin) — kode otomatis BG-YYYY-MM-XXX
 app.post('/api/admin/baglog', requireAuth(['owner', 'admin']), async (c) => {
   const { tanggal, jumlah, sumber, biaya_per_baglog, lokasi, tanggal_masuk_kumbung, catatan } = await c.req.json()
-  if (!tanggal || !jumlah || jumlah <= 0) return c.json({ error: 'Tanggal dan jumlah baglog wajib diisi.' }, 400)
-  const bulan = tanggal.slice(0, 7) // YYYY-MM
+  const jml = parseInt(jumlah)
+  if (!tglValidId(tanggal)) return c.json({ error: 'Tanggal wajib format YYYY-MM-DD.' }, 400)
+  if (!Number.isFinite(jml) || jml <= 0) return c.json({ error: 'Jumlah baglog harus angka lebih dari 0.' }, 400)
+  const biaya = Math.max(0, rupiahBulat(biaya_per_baglog) || 0)
+  const bulan = String(tanggal).slice(0, 7) // YYYY-MM
+
+  // Kode BG-YYYY-MM-XXX dengan coba-ulang bila bentrok (dua admin bersamaan).
+  const nomorKode = (k?: string) => {
+    const m = /-(\d+)$/.exec(String(k || ''))
+    return m ? parseInt(m[1], 10) : 0
+  }
   const last = await c.env.DB.prepare(
-    "SELECT kode FROM baglog_batch WHERE kode LIKE ? ORDER BY kode DESC LIMIT 1"
+    "SELECT kode FROM baglog_batch WHERE kode LIKE ? ORDER BY LENGTH(kode) DESC, kode DESC LIMIT 1"
   ).bind(`BG-${bulan}-%`).first<any>()
-  const urut = last ? parseInt(last.kode.slice(-3)) + 1 : 1
-  const kode = `BG-${bulan}-${String(urut).padStart(3, '0')}`
-  await c.env.DB.prepare(
-    'INSERT INTO baglog_batch (kode, tanggal, jumlah, sumber, biaya_per_baglog, lokasi, tanggal_masuk_kumbung, status, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(kode, tanggal, jumlah, sumber || 'produksi sendiri', biaya_per_baglog || 0, lokasi || '',
-    tanggal_masuk_kumbung || null, tanggal_masuk_kumbung ? 'produktif' : 'inkubasi', catatan || '', c.get('user').id).run()
-  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'baglog', kode, `${jumlah} baglog`)
-  return c.json({ sukses: true, kode })
+  const dasar = nomorKode(last?.kode) + 1
+
+  let kode = ''
+  for (let coba = 0; coba < 6; coba++) {
+    kode = `BG-${bulan}-${String(dasar + coba).padStart(3, '0')}`
+    try {
+      await c.env.DB.prepare(
+        'INSERT INTO baglog_batch (kode, tanggal, jumlah, sumber, biaya_per_baglog, lokasi, tanggal_masuk_kumbung, status, catatan, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(kode, tanggal, jml, sumber || 'produksi sendiri', biaya, lokasi || '',
+        tanggal_masuk_kumbung || null, tanggal_masuk_kumbung ? 'produktif' : 'inkubasi', catatan || '', c.get('user').id).run()
+      await catatAudit(c.env.DB, c.get('user'), 'tambah', 'baglog', kode, `${jml} baglog`)
+      return c.json({ sukses: true, kode })
+    } catch (e: any) {
+      if (!/UNIQUE|constraint failed/i.test(String(e?.message || e)) || coba === 5) throw e
+    }
+  }
+  return c.json({ error: 'Gagal membuat kode batch unik, coba lagi.' }, 500)
 })
 
 // Ubah status batch (owner & admin)
@@ -1173,20 +1255,24 @@ app.get('/api/admin/pelanggan', requireAuth(), async (c) => {
 
 app.post('/api/admin/pelanggan', requireAuth(), async (c) => {
   const { nama, tipe, wa, alamat, catatan } = await c.req.json()
-  if (!nama) return c.json({ error: 'Nama pelanggan wajib diisi.' }, 400)
+  if (!String(nama || '').trim()) return c.json({ error: 'Nama pelanggan wajib diisi.' }, 400)
   if (tipe && !['eceran', 'warung', 'resto', 'reseller'].includes(tipe)) return c.json({ error: 'Tipe tidak valid.' }, 400)
+  // Nomor WA dikanonkan (62xxxx) supaya cocok dengan checkout/OTP/notifikasi —
+  // tanpa ini "0812-xxx" bikin pelanggan ganda saat mereka checkout.
+  const nomor = normalWA(wa)
   await c.env.DB.prepare(
     'INSERT INTO pelanggan (nama, tipe, wa, alamat, catatan) VALUES (?, ?, ?, ?, ?)'
-  ).bind(nama, tipe || 'eceran', wa || '', alamat || '', catatan || '').run()
+  ).bind(String(nama).trim().slice(0, 80), tipe || 'eceran', nomor, alamat || '', catatan || '').run()
   return c.json({ sukses: true })
 })
 
 app.put('/api/admin/pelanggan/:id', requireAuth(['owner', 'admin']), async (c) => {
   const { nama, tipe, wa, alamat, catatan, aktif } = await c.req.json()
-  if (!nama) return c.json({ error: 'Nama pelanggan wajib diisi.' }, 400)
+  if (!String(nama || '').trim()) return c.json({ error: 'Nama pelanggan wajib diisi.' }, 400)
   await c.env.DB.prepare(
     'UPDATE pelanggan SET nama=?, tipe=?, wa=?, alamat=?, catatan=?, aktif=? WHERE id=?'
-  ).bind(nama, tipe || 'eceran', wa || '', alamat || '', catatan || '', aktif ? 1 : 0, c.req.param('id')).run()
+  ).bind(String(nama).trim().slice(0, 80), tipe || 'eceran', normalWA(wa), alamat || '', catatan || '', aktif ? 1 : 0, c.req.param('id')).run()
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'pelanggan', c.req.param('id'), `Ubah pelanggan ${String(nama).trim()}`)
   return c.json({ sukses: true })
 })
 
@@ -1229,15 +1315,17 @@ app.get('/api/admin/pengeluaran', requireAuth(['owner', 'admin']), async (c) => 
 
 app.post('/api/admin/pengeluaran', requireAuth(['owner', 'admin']), async (c) => {
   const { tanggal, kategori, jumlah, keterangan, no_bukti } = await c.req.json()
-  if (!tanggal || !kategori || !jumlah || jumlah <= 0) return c.json({ error: 'Tanggal, kategori, dan jumlah wajib diisi.' }, 400)
+  const n = rupiahBulat(jumlah)
+  if (!tglValidId(tanggal)) return c.json({ error: 'Tanggal wajib format YYYY-MM-DD.' }, 400)
+  if (!Number.isFinite(n) || n <= 0) return c.json({ error: 'Jumlah harus angka lebih dari 0.' }, 400)
   if (!KATEGORI_PENGELUARAN.includes(kategori)) return c.json({ error: 'Kategori tidak valid.' }, 400)
   const tutup = await periodeTertutup(c.env.DB, tanggal)
   if (tutup) return c.json({ error: `Buku periode ${tutup} sudah ditutup. Buka kembali dulu di tab Otomatisasi.` }, 400)
   const res = await c.env.DB.prepare(
     'INSERT INTO pengeluaran (tanggal, kategori, jumlah, keterangan, user_id, no_bukti, sumber) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).bind(tanggal, kategori, jumlah, keterangan || '', c.get('user').id,
+  ).bind(tanggal, kategori, n, keterangan || '', c.get('user').id,
     String(no_bukti || '').slice(0, 40), 'manual').run()
-  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'pengeluaran', res.meta.last_row_id, `${kategori} Rp${jumlah} (${tanggal})`)
+  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'pengeluaran', res.meta.last_row_id, `${kategori} Rp${n} (${tanggal})`)
   return c.json({ sukses: true, id: res.meta.last_row_id })
 })
 
@@ -1264,13 +1352,15 @@ app.get('/api/admin/pemasukan-lain', requireAuth(['owner', 'admin']), async (c) 
 
 app.post('/api/admin/pemasukan-lain', requireAuth(['owner', 'admin']), async (c) => {
   const { tanggal, jumlah, keterangan } = await c.req.json()
-  if (!tanggal || !jumlah || jumlah <= 0) return c.json({ error: 'Tanggal dan jumlah wajib diisi.' }, 400)
+  const n = rupiahBulat(jumlah)
+  if (!tglValidId(tanggal)) return c.json({ error: 'Tanggal wajib format YYYY-MM-DD.' }, 400)
+  if (!Number.isFinite(n) || n <= 0) return c.json({ error: 'Jumlah harus angka lebih dari 0.' }, 400)
   const tutup = await periodeTertutup(c.env.DB, tanggal)
   if (tutup) return c.json({ error: `Buku periode ${tutup} sudah ditutup. Buka kembali dulu di tab Otomatisasi.` }, 400)
   const res = await c.env.DB.prepare(
     'INSERT INTO pemasukan_lain (tanggal, jumlah, keterangan, user_id, sumber, kategori) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(tanggal, jumlah, keterangan || '', c.get('user').id, 'manual', 'lainnya').run()
-  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'pemasukan-lain', res.meta.last_row_id, `Rp${jumlah} (${tanggal})`)
+  ).bind(tanggal, n, keterangan || '', c.get('user').id, 'manual', 'lainnya').run()
+  await catatAudit(c.env.DB, c.get('user'), 'tambah', 'pemasukan-lain', res.meta.last_row_id, `Rp${n} (${tanggal})`)
   return c.json({ sukses: true, id: res.meta.last_row_id })
 })
 
@@ -1845,9 +1935,13 @@ app.get('/api/admin/absensi', requireAuth(), async (c) => {
 // Owner/admin koreksi absensi manual (izin/sakit/alpa atau perbaiki jam)
 app.put('/api/admin/absensi/koreksi', requireAuth(['owner', 'admin']), async (c) => {
   const { user_id, tanggal, status, jam_masuk, jam_pulang, catatan } = await c.req.json()
-  if (!user_id || !tanggal) return c.json({ error: 'user_id dan tanggal wajib.' }, 400)
+  if (!user_id || !tglValidId(tanggal)) return c.json({ error: 'user_id dan tanggal (YYYY-MM-DD) wajib.' }, 400)
   const STATUS = ['hadir', 'izin', 'sakit', 'libur', 'alpa']
   if (status && !STATUS.includes(status)) return c.json({ error: 'Status tidak valid.' }, 400)
+  const jamOk = (j: any) => j == null || j === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(String(j))
+  if (!jamOk(jam_masuk) || !jamOk(jam_pulang)) return c.json({ error: 'Jam harus format HH:MM.' }, 400)
+  const uAda = await c.env.DB.prepare('SELECT 1 v FROM users WHERE id = ?').bind(user_id).first()
+  if (!uAda) return c.json({ error: 'Pengguna tidak ditemukan.' }, 404)
   await c.env.DB.prepare(`
     INSERT INTO absensi (user_id, tanggal, jam_masuk, jam_pulang, status, catatan) VALUES (?,?,?,?,?,?)
     ON CONFLICT(user_id, tanggal) DO UPDATE SET
@@ -1897,11 +1991,26 @@ app.post('/api/admin/gaji/bayar', requireAuth(['owner']), async (c) => {
   const total = pokok + b - p
   if (total <= 0) return c.json({ error: `Total gaji Rp ${total.toLocaleString('id')} tidak valid. Cek upah harian & kehadiran (${hariHadir} hari × Rp ${(kar.upah_harian || 0).toLocaleString('id')}).` }, 400)
   const tanggal = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)
-  // Catat pengeluaran kategori gaji dulu, lalu simpan gaji dengan link
+
+  // KLAIM ATOMIK lewat UNIQUE(user_id, periode) pada tabel gaji: INSERT gaji
+  // DULU. Kalau bentrok (double-submit), kita berhenti sebelum membuat baris
+  // pengeluaran — tidak ada pengeluaran gaji "yatim".
+  let gajiId: number
+  try {
+    const g = await c.env.DB.prepare(
+      `INSERT INTO gaji (user_id, periode, hari_hadir, upah_harian, bonus, potongan, total, tanggal_bayar, catatan, dibayar_oleh)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`
+    ).bind(user_id, periode, hariHadir, kar.upah_harian || 0, b, p, total, tanggal, catatan || '', me.id).run()
+    gajiId = Number(g.meta.last_row_id)
+  } catch (e: any) {
+    if (/UNIQUE|constraint failed/i.test(String(e?.message || e))) {
+      return c.json({ error: 'Gaji periode ini sudah dibayar untuk karyawan tersebut.' }, 400)
+    }
+    throw e
+  }
   const keluar = await c.env.DB.prepare(`INSERT INTO pengeluaran (tanggal, kategori, jumlah, keterangan, user_id) VALUES (?,?,?,?,?)`)
     .bind(tanggal, 'gaji', total, `Gaji ${kar.nama} periode ${periode} (${hariHadir} hari hadir${b ? `, bonus ${b}` : ''}${p ? `, potongan ${p}` : ''})`, me.id).run()
-  await c.env.DB.prepare(`INSERT INTO gaji (user_id, periode, hari_hadir, upah_harian, bonus, potongan, total, tanggal_bayar, catatan, pengeluaran_id, dibayar_oleh) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(user_id, periode, hariHadir, kar.upah_harian || 0, b, p, total, tanggal, catatan || '', keluar.meta.last_row_id, me.id).run()
+  await c.env.DB.prepare('UPDATE gaji SET pengeluaran_id = ? WHERE id = ?').bind(keluar.meta.last_row_id, gajiId).run()
   await catatAudit(c.env.DB, me, 'bayar', 'gaji', user_id, `Gaji ${kar.nama} ${periode}: Rp${total} (${hariHadir} hari)`)
   // Kirim slip gaji ke karyawan via WhatsApp (bila nomornya terdaftar)
   c.executionCtx?.waitUntil?.(notifGaji(c.env as OpenWAEnv, {
@@ -1916,6 +2025,8 @@ app.delete('/api/admin/gaji/:id', requireAuth(['owner']), async (c) => {
   const id = c.req.param('id')
   const g = await c.env.DB.prepare('SELECT g.*, u.nama FROM gaji g JOIN users u ON u.id=g.user_id WHERE g.id=?').bind(id).first<any>()
   if (!g) return c.json({ error: 'Data gaji tidak ditemukan.' }, 404)
+  const tutup = await periodeTertutup(c.env.DB, String(g.tanggal_bayar || ''))
+  if (tutup) return c.json({ error: `Buku periode ${tutup} sudah ditutup. Buka kembali dulu di tab Otomatisasi.` }, 400)
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM gaji WHERE id=?').bind(id),
     ...(g.pengeluaran_id ? [c.env.DB.prepare('DELETE FROM pengeluaran WHERE id=?').bind(g.pengeluaran_id)] : [])
@@ -1937,7 +2048,9 @@ app.get('/api/admin/audit', requireAuth(['owner']), async (c) => {
 // Helper CSV: escape nilai + BOM agar Excel baca UTF-8 dengan benar
 function keCSV(header: string[], rows: any[][]): string {
   const esc = (v: any) => {
-    const s = String(v ?? '')
+    let s = String(v ?? '')
+    // Anti formula/DDE injection: sel diawali = + - @ TAB CR diberi awalan '
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
     return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
   }
   return '\uFEFF' + [header, ...rows].map((r) => r.map(esc).join(',')).join('\n')
@@ -1960,7 +2073,7 @@ app.get('/api/admin/ekspor/:jenis', requireAuth(['owner', 'admin']), async (c) =
   if (jenis === 'panen') {
     const q = filterBulan
       ? db.prepare("SELECT p.tanggal, b.kode, p.grade_a, p.grade_b, p.grade_c, p.jumlah_kg, p.susut_kg, p.catatan, u.nama FROM panen p LEFT JOIN baglog_batch b ON b.id=p.batch_id LEFT JOIN users u ON u.id=p.user_id WHERE strftime('%Y-%m',p.tanggal)=? ORDER BY p.tanggal").bind(filterBulan)
-      : db.prepare('SELECT p.tanggal, b.kode, p.grade_a, p.grade_b, p.grade_c, p.jumlah_kg, p.susut_kg, p.catatan, u.nama FROM panen p LEFT JOIN baglog_batch b ON b.id=p.batch_id LEFT JOIN users u ON u.id=p.user_id ORDER BY p.tanggal')
+      : db.prepare('SELECT p.tanggal, b.kode, p.grade_a, p.grade_b, p.grade_c, p.jumlah_kg, p.susut_kg, p.catatan, u.nama FROM panen p LEFT JOIN baglog_batch b ON b.id=p.batch_id LEFT JOIN users u ON u.id=p.user_id ORDER BY p.tanggal DESC LIMIT 20000')
     const { results } = await q.all()
     const csv = keCSV(
       ['Tanggal', 'Batch', 'Grade A (kg)', 'Grade B (kg)', 'Grade C (kg)', 'Total (kg)', 'Susut (kg)', 'Catatan', 'Pencatat'],
@@ -1972,7 +2085,7 @@ app.get('/api/admin/ekspor/:jenis', requireAuth(['owner', 'admin']), async (c) =
   if (jenis === 'penjualan') {
     const q = filterBulan
       ? db.prepare("SELECT j.tanggal, j.nama_produk, j.jumlah, j.total, COALESCE(pl.nama, j.pembeli) pembeli, j.status_bayar, j.jatuh_tempo, j.tanggal_lunas, u.nama FROM penjualan j LEFT JOIN pelanggan pl ON pl.id=j.pelanggan_id LEFT JOIN users u ON u.id=j.user_id WHERE strftime('%Y-%m',j.tanggal)=? ORDER BY j.tanggal").bind(filterBulan)
-      : db.prepare('SELECT j.tanggal, j.nama_produk, j.jumlah, j.total, COALESCE(pl.nama, j.pembeli) pembeli, j.status_bayar, j.jatuh_tempo, j.tanggal_lunas, u.nama FROM penjualan j LEFT JOIN pelanggan pl ON pl.id=j.pelanggan_id LEFT JOIN users u ON u.id=j.user_id ORDER BY j.tanggal')
+      : db.prepare('SELECT j.tanggal, j.nama_produk, j.jumlah, j.total, COALESCE(pl.nama, j.pembeli) pembeli, j.status_bayar, j.jatuh_tempo, j.tanggal_lunas, u.nama FROM penjualan j LEFT JOIN pelanggan pl ON pl.id=j.pelanggan_id LEFT JOIN users u ON u.id=j.user_id ORDER BY j.tanggal DESC LIMIT 20000')
     const { results } = await q.all()
     const csv = keCSV(
       ['Tanggal', 'Produk', 'Jumlah', 'Total (Rp)', 'Pembeli', 'Status Bayar', 'Jatuh Tempo', 'Tanggal Lunas', 'Pencatat'],

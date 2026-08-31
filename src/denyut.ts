@@ -18,8 +18,6 @@
 //  memperlambat atau menggagalkan response ke pengunjung.
 // ============================================================
 import { jalankanOtomatisasi } from './otomatis'
-import { jalankanPengingatHarian } from './waNotifikasi'
-import { bersihkanBayarKedaluwarsa } from './bayarNotifikasi'
 import type { OpenWAEnv } from './openwa'
 
 /**
@@ -31,11 +29,9 @@ import type { OpenWAEnv } from './openwa'
  */
 export function denyutOtomatisasi(c: any, sumber: string): void {
   const env = c.env as OpenWAEnv
-  const tugas = Promise.allSettled([
-    jalankanOtomatisasi(env, sumber),
-    jalankanPengingatHarian(env),
-    bersihkanBayarKedaluwarsa(env)
-  ]).then(() => {})
+  // `jalankanOtomatisasi` sudah mencakup pengingat piutang & sapu tagihan
+  // kedaluwarsa, semuanya di balik satu kunci atomik — jadi cukup panggil ini.
+  const tugas = Promise.resolve(jalankanOtomatisasi(env, sumber)).catch(() => {})
 
   // waitUntil = jalan di belakang setelah response terkirim.
   // Bila runtime tidak menyediakannya, jangan sampai error menjalar.

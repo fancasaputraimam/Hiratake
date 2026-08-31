@@ -10,7 +10,7 @@
 // ============================================================
 
 import type { OpenWAEnv } from './openwa'
-import { cfgVal, getWAConfig, siapKirim, kirimAman, normalWA, rupiah } from './openwa'
+import { cfgVal, klaimCfg, getWAConfig, siapKirim, kirimAman, normalWA, rupiah } from './openwa'
 import { bulanWIB, tanggalHariWIB } from './pembukuan'
 
 async function setCfg(db: D1Database, key: string, value: string): Promise<void> {
@@ -161,7 +161,10 @@ export async function jalankanIngatOpname(env: OpenWAEnv): Promise<{ dijalankan:
     return { dijalankan: false, alasan: 'kas wajar' }
   }
 
-  await setCfg(db, 'otomatis_opname_terakhir', `proses:${hari}`)
+  // KLAIM ATOMIK: request paralel tidak boleh sama-sama kirim.
+  if (!(await klaimCfg(db, 'otomatis_opname_terakhir', terakhir, `proses:${hari}`))) {
+    return { dijalankan: false, alasan: 'sedang diproses' }
+  }
   const { results: owners } = await db.prepare(
     "SELECT wa FROM users WHERE role='owner' AND wa IS NOT NULL AND wa != ''"
   ).all<any>()
@@ -242,10 +245,14 @@ export async function jalankanPenyusutan(
     }
 
     const noBukti = `SUSUT-${periode}-${a.id}`
+    // INSERT OR IGNORE jadi kunci atomik: kalau baris ini sudah pernah dibuat
+    // (run paralel / retry setelah crash), meta.changes = 0 dan kita lewati
+    // SEMUA efek samping (aset_penyusutan, lunas_susut) — tidak dobel.
     const r = await db.prepare(`
-      INSERT INTO pengeluaran (tanggal, kategori, jumlah, keterangan, no_bukti, sumber)
+      INSERT OR IGNORE INTO pengeluaran (tanggal, kategori, jumlah, keterangan, no_bukti, sumber)
       VALUES (?, 'penyusutan', ?, ?, ?, 'auto:penyusutan')
     `).bind(akhirBulan, nilai, `Penyusutan ${a.nama} (${periode})`, noBukti).run()
+    if (!r.meta.changes) continue
 
     await db.prepare(`
       INSERT OR IGNORE INTO aset_penyusutan (aset_id, periode, jumlah, pengeluaran_id, otomatis)
@@ -301,7 +308,9 @@ export async function ringkasanAset(db: D1Database): Promise<any> {
 // ============================================================
 
 function csvAman(v: any): string {
-  const s = String(v ?? '')
+  let s = String(v ?? '')
+  // Anti formula/DDE injection: sel yang diawali = + - @ TAB CR diberi awalan '
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
   return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 

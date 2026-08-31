@@ -12,7 +12,7 @@ import {
 } from './auth'
 import {
   type OpenWAEnv, getWAConfig, siapKirim, statusSesi, ambilQR, mulaiSesi,
-  daftarWebhook, cekWebhook,
+  daftarWebhook, cekWebhook, baseUrlPublik,
   kirimWA, kirimBanyak, normalWA, validWA, sensorWA, cfgVal, namaSitus,
   buatDanKirimOTP, verifikasiOTP, verifikasiTandaTangan, renderTemplate,
   pesanDariTemplate, rupiah, tanggalID, hariIniWIB, envMenyala
@@ -71,12 +71,13 @@ waRoutes.get('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async 
     webhookSecretSumber: sumberRahasia(c.env.OPENWA_WEBHOOK_SECRET, webhookDB),
     urlSumber: sumberRahasia(c.env.OPENWA_URL, map.openwa_url || ''),
     sessionSumber: sumberRahasia(c.env.OPENWA_SESSION, map.openwa_session || ''),
-    aktifSumber: aktifDariEnv ? 'server' : 'web',
+    // Tri-state konsisten dengan *Sumber lain: server (env) / web (dashboard) / kosong
+    aktifSumber: aktifDariEnv ? 'server' : (map.openwa_aktif === '1' ? 'web' : 'kosong'),
     // Hanya 4 huruf terakhir, untuk memastikan pemilik memasang kunci yang benar
     apiKeyPetunjuk: sensorRahasia(cfg.apiKey),
     webhookSecretPetunjuk: sensorRahasia(c.env.OPENWA_WEBHOOK_SECRET || webhookDB),
     siap: siapKirim(cfg),
-    webhookUrl: new URL('/api/webhook/openwa', c.req.url).toString()
+    webhookUrl: new URL('/api/webhook/openwa', await baseUrlPublik(c, c.env.DB) || c.req.url).toString()
   })
 })
 
@@ -266,7 +267,14 @@ waRoutes.post('/api/admin/wa/webhook/daftar', requireAuth(['owner']), async (c) 
     secretBaru = true
   }
 
-  const webhookUrl = new URL('/api/webhook/openwa', c.req.url).toString()
+  const webhookUrl = new URL('/api/webhook/openwa', await baseUrlPublik(c, c.env.DB) || c.req.url).toString()
+
+  // Sudah terdaftar → jangan POST lagi (OpenWA bisa menyimpan duplikat).
+  const cek = await cekWebhook(cfg, webhookUrl)
+  if (cek.terdaftar === true) {
+    return c.json({ sukses: true, webhookUrl, secretBaru, sudahAda: true })
+  }
+
   const r = await daftarWebhook(cfg, webhookUrl, secret)
   if (!r.ok) {
     let e = r.error || 'Gagal mendaftarkan webhook.'
@@ -284,7 +292,7 @@ waRoutes.post('/api/admin/wa/webhook/daftar', requireAuth(['owner']), async (c) 
 // Cek apakah webhook Hiratake sudah terdaftar di OpenWA (best-effort)
 waRoutes.get('/api/admin/wa/webhook/cek', requireAuth(['owner', 'admin']), async (c) => {
   const cfg = await getWAConfig(c.env as OpenWAEnv)
-  const webhookUrl = new URL('/api/webhook/openwa', c.req.url).toString()
+  const webhookUrl = new URL('/api/webhook/openwa', await baseUrlPublik(c, c.env.DB) || c.req.url).toString()
   const r = await cekWebhook(cfg, webhookUrl)
   return c.json({ terdaftar: r.terdaftar, pesan: r.error || '' })
 })
@@ -659,19 +667,30 @@ waRoutes.post('/api/webhook/openwa', async (c) => {
   const messageId = String(data.id || body?.idempotencyKey || '')
   if (!pengirim) return c.json({ ok: true })
 
-  // Idempotency: OpenWA bisa mengirim ulang delivery yang sama
+  // Idempotency ATOMIK: klaim baris wa_masuk lebih dulu (message_id UNIQUE).
+  // Hanya request yang BERHASIL insert yang lanjut menyusun & mengirim balasan
+  // — dua delivery kembar yang datang bersamaan tidak lagi kirim auto-reply 2×.
   if (messageId) {
-    const ada = await c.env.DB.prepare('SELECT id FROM wa_masuk WHERE message_id = ?').bind(messageId).first()
-    if (ada) return c.json({ ok: true, duplikat: true })
+    const klaim = await c.env.DB.prepare(
+      `INSERT OR IGNORE INTO wa_masuk (message_id, pengirim, nama_pengirim, isi, tipe, dibalas, balasan)
+       VALUES (?,?,?,?,?,0,'')`
+    ).bind(messageId, pengirim, String(data?.contact?.pushName || data?.contact?.name || '').slice(0, 60),
+      isi.slice(0, 1000), String(data.type || 'chat')).run()
+    if (!klaim.meta.changes) return c.json({ ok: true, duplikat: true })
   }
 
   const balasan = await susunAutoReply(c.env as any, pengirim, isi)
   try {
-    await c.env.DB.prepare(
-      `INSERT OR IGNORE INTO wa_masuk (message_id, pengirim, nama_pengirim, isi, tipe, dibalas, balasan)
-       VALUES (?,?,?,?,?,?,?)`
-    ).bind(messageId || null, pengirim, String(data?.contact?.pushName || data?.contact?.name || '').slice(0, 60),
-      isi.slice(0, 1000), String(data.type || 'chat'), balasan ? 1 : 0, (balasan || '').slice(0, 1000)).run()
+    if (messageId) {
+      await c.env.DB.prepare('UPDATE wa_masuk SET dibalas=?, balasan=? WHERE message_id=?')
+        .bind(balasan ? 1 : 0, (balasan || '').slice(0, 1000), messageId).run()
+    } else {
+      await c.env.DB.prepare(
+        `INSERT INTO wa_masuk (message_id, pengirim, nama_pengirim, isi, tipe, dibalas, balasan)
+         VALUES (NULL,?,?,?,?,?,?)`
+      ).bind(pengirim, String(data?.contact?.pushName || data?.contact?.name || '').slice(0, 60),
+        isi.slice(0, 1000), String(data.type || 'chat'), balasan ? 1 : 0, (balasan || '').slice(0, 1000)).run()
+    }
   } catch { /* pencatatan gagal tidak boleh membatalkan balasan */ }
 
   if (balasan) {

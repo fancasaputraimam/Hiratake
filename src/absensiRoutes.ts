@@ -139,11 +139,19 @@ absensiRoutes.post('/api/admin/absensi/masuk', requireAuth(), async (c) => {
     ).bind(jam, lat, lng, v.jarak, telat, perangkat, ada.id).run()
     absensiId = ada.id
   } else {
-    const r = await c.env.DB.prepare(
-      `INSERT INTO absensi (user_id, tanggal, jam_masuk, status, lat_masuk, lng_masuk, jarak_masuk_m, terlambat_menit, perangkat)
-       VALUES (?,?,?,'hadir',?,?,?,?,?)`
-    ).bind(me.id, tanggal, jam, lat, lng, v.jarak, telat, perangkat).run()
-    absensiId = Number(r.meta.last_row_id)
+    // Double-tap (mobile lambat) bisa membuat dua INSERT bersamaan → salah satu
+    // kena UNIQUE(user_id, tanggal). Tangani halus: itu berarti sudah tercatat.
+    try {
+      const r = await c.env.DB.prepare(
+        `INSERT INTO absensi (user_id, tanggal, jam_masuk, status, lat_masuk, lng_masuk, jarak_masuk_m, terlambat_menit, perangkat)
+         VALUES (?,?,?,'hadir',?,?,?,?,?)`
+      ).bind(me.id, tanggal, jam, lat, lng, v.jarak, telat, perangkat).run()
+      absensiId = Number(r.meta.last_row_id)
+    } catch (e: any) {
+      if (!/UNIQUE|constraint failed/i.test(String(e?.message || e))) throw e
+      const lagi = await c.env.DB.prepare('SELECT id, jam_masuk FROM absensi WHERE user_id=? AND tanggal=?').bind(me.id, tanggal).first<any>()
+      return c.json({ error: `Sudah absen masuk hari ini${lagi?.jam_masuk ? ` (${lagi.jam_masuk})` : ''}.` }, 400)
+    }
   }
 
   if (v.foto) {

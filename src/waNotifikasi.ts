@@ -4,7 +4,7 @@
 //  boleh menggagalkan transaksi bisnis (anti-miss).
 // ============================================================
 import {
-  type OpenWAEnv, kirimAman, pesanDariTemplate, namaSitus, cfgVal,
+  type OpenWAEnv, kirimAman, pesanDariTemplate, namaSitus, cfgVal, klaimCfg,
   rupiah, tanggalID, rincianItem, normalWA, hariIniWIB, jamWIB, getWAConfig, siapKirim
 } from './openwa'
 
@@ -145,19 +145,27 @@ export async function notifNota(
     if (!(await bolehKirim(env, 'openwa_notif_nota'))) return
     const db = env.DB
     const ps = await db.prepare(
-      `SELECT ps.id, ps.kode, pl.nama, pl.wa FROM pesanan ps
-       JOIN pelanggan pl ON pl.id = ps.pelanggan_id WHERE ps.id = ?`
+      `SELECT ps.id, ps.kode, ps.sumber, ps.ongkir, ps.biaya_admin, ps.total_bayar, pl.nama, pl.wa
+       FROM pesanan ps JOIN pelanggan pl ON pl.id = ps.pelanggan_id WHERE ps.id = ?`
     ).bind(pesananId).first<any>()
     if (!ps || !normalWA(ps.wa)) return
 
     const { results: items } = await db.prepare(
       'SELECT nama_produk, jumlah, harga, subtotal FROM pesanan_item WHERE pesanan_id = ?'
     ).bind(ps.id).all<any>()
-    const total = items.reduce((a: number, b: any) => a + (b.subtotal || 0), 0)
+    const subtotal = items.reduce((a: number, b: any) => a + (b.subtotal || 0), 0)
+    const ongkir = Math.max(0, parseInt(ps.ongkir || 0, 10) || 0)
+    const biaya = Math.max(0, parseInt(ps.biaya_admin || 0, 10) || 0)
+    // Nota harus sama dengan yang DIBAYAR pelanggan: subtotal item + ongkir +
+    // biaya admin (untuk pesanan web). total_bayar dipakai bila tersedia.
+    const total = Number(ps.total_bayar) > 0 ? Number(ps.total_bayar) : subtotal + ongkir + biaya
+    const rincianExtra =
+      (ongkir > 0 ? `\n• Ongkos kirim = ${rupiah(ongkir)}` : '') +
+      (biaya > 0 ? `\n• Biaya layanan = ${rupiah(biaya)}` : '')
 
     const isi = await pesanDariTemplate(db, 'nota', {
       kode: ps.kode, nama: ps.nama, tanggal: tanggalID(hariIniWIB()),
-      rincian: rincianItem(items as any), total: rupiah(total),
+      rincian: rincianItem(items as any) + rincianExtra, total: rupiah(total),
       status_bayar: statusBayar === 'tempo' ? 'TEMPO (belum lunas)' : 'LUNAS ✅',
       info_tempo: statusBayar === 'tempo' && jatuhTempo ? `\nJatuh tempo: ${tanggalID(jatuhTempo)}` : '',
       situs: await namaSitus(db)
@@ -284,13 +292,18 @@ export async function jalankanPengingatHarian(
       if (jamWIB() < jamTarget) return { dijalankan: false, terkirim: 0, alasan: `Menunggu jam ${jamTarget}:00 WIB.` }
     }
 
-    // Kunci sementara (bukan tanggal final) agar request paralel tidak mengirim ganda.
-    // Kalau semua pengiriman gagal, kunci dilepas supaya dicoba lagi hari ini juga.
     const tandai = (v: string) =>
       db.prepare(
         'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
       ).bind('openwa_pengingat_terakhir', v).run()
-    await tandai(`proses:${hari}`)
+
+    // KLAIM ATOMIK: dua entry-point (webhook + denyut) sering menembak dalam
+    // ~1 detik. Tanpa CAS keduanya lolos cek di atas & ambil daftar piutang yang
+    // sama sebelum salah satu jadi 'terkirim' → pelanggan dapat pesan 2×.
+    if (!paksa && !(await klaimCfg(db, 'openwa_pengingat_terakhir', terakhir, `proses:${hari}`))) {
+      return { dijalankan: false, terkirim: 0, alasan: 'Sedang diproses.' }
+    }
+    if (paksa) await tandai(`proses:${hari}`)
 
     // Piutang: terlambat, atau jatuh tempo dalam 2 hari — 1 pesan per piutang per hari
     const { results } = await db.prepare(

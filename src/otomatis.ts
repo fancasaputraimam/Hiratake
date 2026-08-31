@@ -2,16 +2,12 @@
 // Cloudflare hosted deploy tidak mendukung cron trigger, jadi semua tugas
 // harian "menempel" pada request pertama tiap hari (dipicu dari dashboard/landing).
 // Setiap tugas punya kunci "terakhir dijalankan" agar tidak dobel walau paralel.
-import { type OpenWAEnv, cfgVal, getWAConfig, siapKirim, kirimAman, normalWA, hariIniWIB, jamWIB, rupiah } from './openwa'
+import { type OpenWAEnv, cfgVal, setCfgVal as setCfg, klaimCfg, getWAConfig, siapKirim, kirimAman, normalWA, hariIniWIB, jamWIB, rupiah } from './openwa'
 import { buatPenjualanDariPesanan } from './pesananOtomatis'
 import { jalankanPembukuanOtomatis } from './pembukuan'
 import { jalankanAsetKasOtomatis } from './asetKas'
-
-async function setCfg(db: D1Database, key: string, value: string): Promise<void> {
-  await db.prepare(
-    'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-  ).bind(key, value).run()
-}
+import { jalankanPengingatHarian } from './waNotifikasi'
+import { bersihkanBayarKedaluwarsa } from './bayarNotifikasi'
 
 /** Kemarin dalam WIB (YYYY-MM-DD). */
 function kemarinWIB(): string {
@@ -29,32 +25,37 @@ export async function jalankanAutoAlpa(env: OpenWAEnv): Promise<{ dijalankan: bo
   if ((await cfgVal(db, 'otomatis_alpa_terakhir', '')) === hari) return { dijalankan: false, ditandai: 0 }
   await setCfg(db, 'otomatis_alpa_terakhir', hari) // kunci dulu, anti dobel
 
-  const kemarin = kemarinWIB()
-  // Minggu = hari libur default (tidak ditandai alpa)
-  const hariMinggu = new Date(kemarin + 'T00:00:00Z').getUTCDay() === 0
-  if (hariMinggu) return { dijalankan: true, ditandai: 0 }
-  // Hari libur nasional / libur usaha yang didaftarkan owner → jangan alpa.
-  // (Tanpa ini karyawan dicap bolos pada hari yang memang tidak kerja.)
-  const libur = await db.prepare('SELECT 1 v FROM hari_libur WHERE tanggal = ?')
-    .bind(kemarin).first<any>().catch(() => null)
-  if (libur) return { dijalankan: true, ditandai: 0 }
-
-  // Karyawan aktif yang TIDAK punya baris absensi kemarin → alpa otomatis.
-  // Owner tidak dianggap alpa (pemilik tidak wajib absen).
-  const r = await db.prepare(`
-    INSERT INTO absensi (user_id, tanggal, status, catatan)
-    SELECT u.id, ?, 'alpa', 'Otomatis: tidak absen'
-    FROM users u
-    WHERE u.aktif = 1 AND u.role != 'owner'
-      AND NOT EXISTS (SELECT 1 FROM absensi a WHERE a.user_id = u.id AND a.tanggal = ?)
-  `).bind(kemarin, kemarin).run()
-  const n = r.meta.changes || 0
-  if (n > 0) {
-    await db.prepare(
-      "INSERT INTO audit_log (user_id, nama, aksi, entitas, entitas_id, detail) VALUES (NULL, 'SISTEM', 'tambah', 'absensi', '', ?)"
-    ).bind(`Auto-alpa ${kemarin}: ${n} karyawan tidak absen`).run().catch(() => {})
+  // CATCH-UP: proses setiap hari kerja sejak terakhir diproses (maks 10 hari
+  // ke belakang) — kalau situs sepi beberapa hari, hari yang terlewat tetap
+  // dievaluasi, tidak hilang selamanya.
+  const hariList: string[] = []
+  for (let i = 1; i <= 10; i++) {
+    hariList.push(new Date(Date.now() + 7 * 3600 * 1000 - i * 86400_000).toISOString().slice(0, 10))
   }
-  return { dijalankan: true, ditandai: n }
+
+  let ditandai = 0
+  for (const tgl of hariList) {
+    if (new Date(tgl + 'T00:00:00Z').getUTCDay() === 0) continue // Minggu = libur default
+    const libur = await db.prepare('SELECT 1 v FROM hari_libur WHERE tanggal = ?')
+      .bind(tgl).first<any>().catch(() => null)
+    if (libur) continue
+
+    const r = await db.prepare(`
+      INSERT INTO absensi (user_id, tanggal, status, catatan)
+      SELECT u.id, ?, 'alpa', 'Otomatis: tidak absen'
+      FROM users u
+      WHERE u.aktif = 1 AND u.role != 'owner'
+        AND NOT EXISTS (SELECT 1 FROM absensi a WHERE a.user_id = u.id AND a.tanggal = ?)
+    `).bind(tgl, tgl).run()
+    const n = r.meta.changes || 0
+    if (n > 0) {
+      ditandai += n
+      await db.prepare(
+        "INSERT INTO audit_log (user_id, nama, aksi, entitas, entitas_id, detail) VALUES (NULL, 'SISTEM', 'tambah', 'absensi', '', ?)"
+      ).bind(`Auto-alpa ${tgl}: ${n} karyawan tidak absen`).run().catch(() => {})
+    }
+  }
+  return { dijalankan: true, ditandai }
 }
 
 // ============================================================
@@ -72,9 +73,11 @@ export async function jalankanRingkasanHarian(env: OpenWAEnv): Promise<{ dijalan
   if (ringkasTerakhir === hari || ringkasTerakhir === `proses:${hari}`) return { dijalankan: false }
   const jamTarget = parseInt(await cfgVal(db, 'openwa_jam_pengingat', '8')) || 8
   if (jamWIB() < jamTarget) return { dijalankan: false }
-  // Kunci sementara (bukan tanggal) supaya request paralel tidak kirim ganda,
-  // TAPI kalau pengiriman gagal, kunci dilepas agar denyut berikutnya mencoba lagi.
-  await setCfg(db, 'otomatis_ringkasan_terakhir', `proses:${hari}`)
+  // KLAIM ATOMIK: hanya satu request yang menang & lanjut kirim. Kalau
+  // pengiriman gagal, kunci dilepas agar denyut berikutnya mencoba lagi.
+  if (!(await klaimCfg(db, 'otomatis_ringkasan_terakhir', ringkasTerakhir, `proses:${hari}`))) {
+    return { dijalankan: false }
+  }
 
   const kemarin = kemarinWIB()
   const [panen, jual, keluar, hadir, telat, alpa, poBaru, piutang] = await Promise.all([
@@ -218,7 +221,8 @@ export async function jalankanIngatPesanan(env: OpenWAEnv): Promise<{ dikirim: n
   const cfg = await getWAConfig(env)
   if (!siapKirim(cfg)) return { dikirim: 0 }
   const hari = hariIniWIB()
-  if ((await cfgVal(db, 'otomatis_ingat_terakhir', '')) === hari) return { dikirim: 0 }
+  const ingatTerakhir = await cfgVal(db, 'otomatis_ingat_terakhir', '')
+  if (ingatTerakhir === hari) return { dikirim: 0 }
 
   const jamTarget = parseInt(await cfgVal(db, 'openwa_jam_pengingat', '8')) || 8
   if (jamWIB() < jamTarget) return { dikirim: 0 }
@@ -237,7 +241,8 @@ export async function jalankanIngatPesanan(env: OpenWAEnv): Promise<{ dikirim: n
   `).bind(jamDiam).all<any>().catch(() => ({ results: [] as any[] }))
 
   if (!results.length) return { dikirim: 0 }
-  await setCfg(db, 'otomatis_ingat_terakhir', hari)
+  // KLAIM ATOMIK: cegah dua request sama-sama kirim.
+  if (!(await klaimCfg(db, 'otomatis_ingat_terakhir', ingatTerakhir, hari))) return { dikirim: 0 }
 
   const nama = await cfgVal(db, 'situs_nama', 'Hiratake')
   const baris = (results as any[]).map(
@@ -288,8 +293,9 @@ export async function jalankanOtomatisasi(env: OpenWAEnv, sumber = 'request'): P
     const lalu = Date.parse(denyut)
     if (!isNaN(lalu) && Date.now() - lalu < JEDA_MENIT * 60_000) return
   }
-  // Kunci dulu supaya request paralel tidak ikut masuk
-  await setCfg(db, 'otomatis_denyut_terakhir', new Date().toISOString())
+  // KLAIM ATOMIK: hanya SATU request yang boleh masuk per JEDA_MENIT. Tanpa ini
+  // dua request bersamaan sama-sama lolos cek di atas lalu jalan dobel.
+  if (!(await klaimCfg(db, 'otomatis_denyut_terakhir', denyut, new Date().toISOString()))) return
   await setCfg(db, 'otomatis_denyut_sumber', sumber)
 
   await Promise.allSettled([
@@ -299,6 +305,10 @@ export async function jalankanOtomatisasi(env: OpenWAEnv, sumber = 'request'): P
     jalankanSusulPenjualan(env),
     jalankanSapuPesanan(env),
     jalankanIngatPesanan(env),
+    // Pengingat piutang & sapu tagihan kedaluwarsa — dulu dipanggil terpisah
+    // dari denyut.ts sehingga jalan dobel; sekarang ikut di sini di balik kunci.
+    jalankanPengingatHarian(env),
+    bersihkanBayarKedaluwarsa(env),
     // Fase 12 — pembukuan otomatis (biaya baglog, rekon piutang,
     // tutup buku bulanan, rekap WA awal bulan)
     jalankanPembukuanOtomatis(env),

@@ -1916,7 +1916,10 @@ const waLabelJenis = {
 
 // ---------- Pemuat utama tab ----------
 async function loadWhatsApp() {
-  await Promise.all([loadWaStatus(), loadWaConfig(), loadWaLog()]);
+  // Ambil /status SEKALI lalu oper ke loadWaConfig → loadWaLangkah, supaya tab
+  // tidak menembak /api/admin/wa/status 2x (tiap panggilan = round-trip gateway).
+  const [st] = await Promise.all([loadWaStatus(), loadWaLog()]);
+  await loadWaConfig(st);
 }
 
 // ---------- Status gateway ----------
@@ -1927,8 +1930,9 @@ async function loadWaStatus() {
   const btnQr = document.getElementById('btn-wa-qr');
   if (!teks) return;
   teks.innerHTML = '<i class="fas fa-spinner fa-spin text-sumi/40"></i>';
+  let s = null;
   try {
-    const s = await api('/api/admin/wa/status');
+    s = await api('/api/admin/wa/status');
     const peta = {
       ready: ['wa-pill-ok', 'Tersambung'], qr_ready: ['wa-pill-warn', 'Menunggu QR'],
       authenticating: ['wa-pill-warn', 'Menyambungkan'], initializing: ['wa-pill-warn', 'Menyiapkan'],
@@ -1947,6 +1951,7 @@ async function loadWaStatus() {
     teks.innerHTML = '<span class="wa-pill wa-pill-off">Gagal memeriksa</span>';
     pesan.textContent = ex.message;
   }
+  return s;
 }
 
 document.getElementById('btn-wa-refresh')?.addEventListener('click', () => loadWhatsApp());
@@ -2177,7 +2182,7 @@ document.getElementById('btn-wa-broadcast')?.addEventListener('click', async () 
 });
 
 // ---------- Konfigurasi ----------
-async function loadWaConfig() {
+async function loadWaConfig(stCache) {
   const form = document.getElementById('form-wa-config');
   if (!form) return;
   try {
@@ -2272,12 +2277,12 @@ async function loadWaConfig() {
        "secret":"NILAI_OPENWA_WEBHOOK_SECRET"}'`;
     }
 
-    loadWaLangkah(d);
+    loadWaLangkah(d, stCache);
   } catch (ex) { toast(ex.message, false); }
 }
 
 // ---------- Panduan "Langkah Menghubungkan" ----------
-async function loadWaLangkah(dCfg) {
+async function loadWaLangkah(dCfg, stCfg) {
   const ol = document.getElementById('wa-langkah-list');
   const ringkas = document.getElementById('wa-langkah-ringkas');
   if (!ol) return;
@@ -2287,7 +2292,7 @@ async function loadWaLangkah(dCfg) {
   try {
     const [c1, c2, c3] = await Promise.all([
       dCfg ? Promise.resolve(dCfg) : api('/api/admin/wa/pengaturan'),
-      api('/api/admin/wa/status').catch(() => ({})),
+      stCfg ? Promise.resolve(stCfg) : api('/api/admin/wa/status').catch(() => ({})),
       api('/api/admin/wa/webhook/cek').catch(() => ({}))
     ]);
     d = c1 || {}; st = c2 || {}; wh = c3 || {};
@@ -2330,7 +2335,7 @@ async function loadWaLangkah(dCfg) {
     !dasarSiap ? 'Selesaikan langkah 1–3 dulu.'
       : sesiReady ? 'Nomor sudah login.'
       : perluQr ? 'Sesi menunggu QR discan.'
-      : st.pesan || `Status sesi: ${waEsc(st.status || 'tidak diketahui')}.`,
+      : waEsc(st.pesan || `Status sesi: ${st.status || 'tidak diketahui'}.`),
     !dasarSiap ? '' : perluQr ? tombol('qr', 'Tampilkan QR') : tombol('mulai', 'Mulai Sesi')
   ));
   langkah.push(item(
@@ -2372,10 +2377,11 @@ window.waLangkahAksi = async (jenis) => {
     } else if (jenis === 'webhook') {
       const d = await api('/api/admin/wa/webhook/daftar', { method: 'POST' });
       toast(d.secretBaru ? 'Webhook terdaftar + webhook secret dibuat otomatis ✅' : 'Webhook didaftarkan ke OpenWA ✅', true);
-      if (typeof loadWaConfig === 'function') loadWaConfig();
     }
   } catch (ex) { toast(ex.message, false); }
-  setTimeout(() => { loadWaLangkah(); loadWaStatus(); }, jenis === 'mulai' ? 3500 : 500);
+  // Satu kali refresh saja (bukan loadWaConfig + setTimeout ganda).
+  const refresh = async () => { const st = await loadWaStatus(); loadWaLangkah(null, st); };
+  if (jenis === 'mulai') setTimeout(refresh, 3500); else refresh();
 };
 
 document.getElementById('btn-wa-langkah-cek')?.addEventListener('click', () => loadWaLangkah());

@@ -28,12 +28,16 @@ import { cfgVal, type OpenWAEnv } from './openwa'
  * (bukan COUNT), + `offset` untuk percobaan ulang saat bentrok.
  */
 export async function kodePesananBaru(db: D1Database, bulan: string, offset = 0): Promise<string> {
+  // Urutkan by panjang lalu kode, supaya PO-...-1000 dianggap lebih besar dari
+  // PO-...-999 (perbandingan string biasa keliru di sini).
   const last = await db.prepare(
-    'SELECT kode FROM pesanan WHERE kode LIKE ? ORDER BY kode DESC LIMIT 1'
+    'SELECT kode FROM pesanan WHERE kode LIKE ? ORDER BY LENGTH(kode) DESC, kode DESC LIMIT 1'
   ).bind(`PO-${bulan}-%`).first<{ kode: string }>()
   let urut = 1
   if (last?.kode) {
-    const n = parseInt(String(last.kode).slice(-3), 10)
+    // Ambil bilangan di ujung kode (bukan 3 char terakhir — itu rusak di >999).
+    const m = /-(\d+)$/.exec(String(last.kode))
+    const n = m ? parseInt(m[1], 10) : NaN
     if (!isNaN(n)) urut = n + 1
   }
   return `PO-${bulan}-${String(urut + offset).padStart(3, '0')}`
@@ -155,9 +159,12 @@ export async function buatPenjualanDariPesanan(
   let biayaDicatat = 0
 
   if (catatOngkir && bayar === 'lunas') {
+    // INSERT OR IGNORE + unique index (sumber, no_bukti): kalau pesanan ini
+    // pernah diproses lalu penjualannya dihapus & diproses ulang, baris
+    // ongkir/biaya TIDAK digandakan.
     if (ongkir > 0) {
       stmts.push(db.prepare(
-        `INSERT INTO pemasukan_lain (tanggal, jumlah, keterangan, user_id, no_bukti, sumber, kategori)
+        `INSERT OR IGNORE INTO pemasukan_lain (tanggal, jumlah, keterangan, user_id, no_bukti, sumber, kategori)
          VALUES (?, ?, ?, ?, ?, 'auto:ongkir', 'ongkir')`
       ).bind(tanggal, ongkir, `Ongkir pesanan ${ps.kode}`, opsi.userId ?? null, ps.kode))
       ongkirDicatat = ongkir
@@ -166,11 +173,11 @@ export async function buatPenjualanDariPesanan(
       // Biaya admin gateway: uangnya masuk dari pelanggan, lalu dipotong
       // provider. Dicatat dua sisi agar saldo kas cocok dengan mutasi bank.
       stmts.push(db.prepare(
-        `INSERT INTO pemasukan_lain (tanggal, jumlah, keterangan, user_id, no_bukti, sumber, kategori)
+        `INSERT OR IGNORE INTO pemasukan_lain (tanggal, jumlah, keterangan, user_id, no_bukti, sumber, kategori)
          VALUES (?, ?, ?, ?, ?, 'auto:biaya_admin', 'biaya_admin')`
       ).bind(tanggal, biaya, `Biaya admin dibayar pelanggan — pesanan ${ps.kode}`, opsi.userId ?? null, ps.kode))
       stmts.push(db.prepare(
-        `INSERT INTO pengeluaran (tanggal, kategori, jumlah, keterangan, user_id, no_bukti, sumber)
+        `INSERT OR IGNORE INTO pengeluaran (tanggal, kategori, jumlah, keterangan, user_id, no_bukti, sumber)
          VALUES (?, 'lainnya', ?, ?, ?, ?, 'auto:gateway')`
       ).bind(tanggal, biaya, `Biaya payment gateway — pesanan ${ps.kode}`, opsi.userId ?? null, ps.kode))
       biayaDicatat = biaya

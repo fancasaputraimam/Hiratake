@@ -13,7 +13,7 @@ import {
 } from './auth'
 import {
   type OpenWAEnv, normalWA, validWA, sensorWA, cfgVal, getWAConfig, siapKirim,
-  buatDanKirimOTP, verifikasiOTP, rupiah, tanggalID
+  buatDanKirimOTP, verifikasiOTP, rupiah, tanggalID, baseUrlPublik
 } from './openwa'
 import {
   type BayarEnv, type BayarConfig, type ProviderId, PROVIDER_INFO, KUNCI_BAYAR,
@@ -139,16 +139,34 @@ bayarRoutes.post('/api/checkout', async (c) => {
 
   // --- Validasi item; harga SELALU dari database (anti-miss) ---
   const baris: any[] = []
+  let beratPesanan = 0
   for (const it of item) {
     const jml = parseInt(it?.jumlah)
     // Terima kedua gaya penamaan agar klien lama/baru sama-sama jalan
     const pid = it?.produk_id ?? it?.produkId
     if (!pid || !jml || jml <= 0 || jml > MAKS_QTY) continue
-    const p = await db.prepare('SELECT id, nama, harga FROM produk WHERE id = ? AND aktif = 1')
+    const p = await db.prepare('SELECT id, nama, harga, berat_kg FROM produk WHERE id = ? AND aktif = 1')
       .bind(pid).first<any>()
-    if (p) baris.push({ produk_id: p.id, nama_produk: p.nama, jumlah: jml, harga: p.harga, subtotal: p.harga * jml })
+    if (p) {
+      baris.push({ produk_id: p.id, nama_produk: p.nama, jumlah: jml, harga: p.harga, subtotal: p.harga * jml })
+      beratPesanan += (Number(p.berat_kg) || 0) * jml
+    }
   }
   if (!baris.length) return c.json({ error: 'Produk yang dipilih tidak valid.' }, 400)
+
+  // --- Batas stok (opsional, dinyalakan owner: setting `checkout_batas_stok`) ---
+  if ((await cfgVal(db, 'checkout_batas_stok', '0')) === '1' && beratPesanan > 0) {
+    const s = await db.prepare(`
+      SELECT (
+          (SELECT COALESCE(SUM(jumlah_kg),0) FROM panen)
+        - (SELECT COALESCE(SUM(berat_kg),0) FROM penjualan)
+        + (SELECT COALESCE(SUM(CASE WHEN arah='masuk' THEN jumlah_kg ELSE -jumlah_kg END),0) FROM stok_penyesuaian)
+      ) AS v`).first<any>()
+    const tersedia = Math.round(((s?.v ?? 0)) * 100) / 100
+    if (beratPesanan > tersedia) {
+      return c.json({ error: `Stok jamur tinggal ${Math.max(0, tersedia)} kg — pesanan Anda ${Math.round(beratPesanan * 100) / 100} kg. Kurangi jumlah atau hubungi kami via WhatsApp.` }, 409)
+    }
+  }
 
   const subtotal = baris.reduce((a, b) => a + b.subtotal, 0)
   const ongkir = hitungOngkir(cfg, subtotal)
@@ -225,7 +243,9 @@ bayarRoutes.post('/api/checkout', async (c) => {
 
   // --- Bayar QRIS: buat tagihan di provider ---
   const kodeBayar = kodePembayaran()
-  const asal = new URL(c.req.url).origin
+  // Base URL publik: pakai setting `situs_url` bila diisi (di balik nginx yang
+  // tidak meneruskan Host, c.req.url bisa jadi http://127.0.0.1:3000).
+  const asal = await baseUrlPublik(c, db)
   const tagihan = await buatTagihan(cfg, {
     kodePembayaran: kodeBayar,
     kodePesanan: kode,
@@ -372,7 +392,7 @@ async function tandaiLunas(
   const db = c.env.DB as D1Database
   const upd = await db.prepare(
     `UPDATE pembayaran SET status='dibayar', dibayar_at=CURRENT_TIMESTAMP,
-       updated_at=CURRENT_TIMESTAMP, diverifikasi_oleh=?, catatan = catatan || ?
+       updated_at=CURRENT_TIMESTAMP, diverifikasi_oleh=?, catatan = COALESCE(catatan,'') || ?
      WHERE id = ? AND status = 'menunggu'`
   ).bind(userId ?? null, ` [lunas via ${sumber}]`, pembayaranId).run()
 
@@ -383,7 +403,7 @@ async function tandaiLunas(
     "UPDATE pesanan SET status_bayar='lunas', dibayar_at=CURRENT_TIMESTAMP WHERE id = ?"
   ).bind(pesananId).run()
 
-  const asal = new URL(c.req.url).origin
+  const asal = await baseUrlPublik(c, db)
   const ps = await db.prepare('SELECT kode, token_lacak FROM pesanan WHERE id = ?').bind(pesananId).first<any>()
   const linkLacak = ps?.token_lacak ? `${asal}/lacak?token=${ps.token_lacak}` : asal
   await catatAudit(db, null, 'ubah', 'pembayaran', ps?.kode || String(pesananId),
@@ -461,12 +481,21 @@ bayarRoutes.post('/api/callback/pembayaran', async (c) => {
   }
 
   const p = await db.prepare(
-    'SELECT id, pesanan_id, metode, jumlah, status FROM pembayaran WHERE kode = ? OR (ref_id != \'\' AND ref_id = ?)'
+    'SELECT id, pesanan_id, metode, jumlah, status, provider FROM pembayaran WHERE kode = ? OR (ref_id != \'\' AND ref_id = ?)'
   ).bind(hasil.kodePembayaran || '', hasil.refId || '').first<any>()
   if (!p) {
     await db.prepare("UPDATE pembayaran_callback SET hasil='transaksi tidak ditemukan' WHERE sidik=?")
       .bind(sidik).run()
     return c.json({ error: 'Transaksi tidak ditemukan.' }, 404)
+  }
+
+  // Anti-forgery: provider yang dipakai untuk verifikasi HARUS sama dengan
+  // provider transaksi ini. Tanpa cek ini, penyerang bisa memaksa ?provider=
+  // ke gateway yang tidak dikonfigurasi (secret kosong) untuk memalsukan lunas.
+  if (p.provider && p.provider !== 'manual' && p.provider !== provider) {
+    await db.prepare("UPDATE pembayaran_callback SET hasil=? WHERE sidik=?")
+      .bind(`provider tidak cocok (transaksi ${p.provider}, callback ${provider})`, sidik).run()
+    return c.json({ error: 'Provider callback tidak sesuai transaksi.' }, 409)
   }
 
   // Anti-miss: jumlah yang dibayar harus sama dengan tagihan
@@ -655,7 +684,7 @@ bayarRoutes.get('/api/admin/bayar/pengaturan', requireAuth(['owner', 'admin']), 
 
   const cfg = await getBayarConfig(c.env as BayarEnv)
   const siap = qrisSiap(cfg)
-  const asal = new URL(c.req.url).origin
+  const asal = await baseUrlPublik(c, c.env.DB)
   return c.json({
     // `saring` membuang nilai kredensial sebelum dikirim ke browser
     pengaturan: saring(map),
@@ -875,7 +904,7 @@ bayarRoutes.post('/api/admin/bayar/uji', requireAuth(['owner']), async (c) => {
   const siap = qrisSiap(cfg)
   if (!siap.ok) return c.json({ error: siap.alasan }, 400)
 
-  const asal = new URL(c.req.url).origin
+  const asal = await baseUrlPublik(c, c.env.DB)
   const kodeUji = kodePembayaran()
   const t = await buatTagihan(cfg, {
     kodePembayaran: kodeUji, kodePesanan: 'UJI', jumlah: Math.max(1000, cfg.minQris),

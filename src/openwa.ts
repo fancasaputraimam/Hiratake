@@ -92,6 +92,42 @@ export async function cfgVal(db: D1Database, key: string, def = ''): Promise<str
   return r?.value ?? def
 }
 
+/** Simpan satu nilai pengaturan (upsert). */
+export async function setCfgVal(db: D1Database, key: string, value: string): Promise<void> {
+  await db.prepare(
+    'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+  ).bind(key, value).run()
+}
+
+/**
+ * Klaim atomik sebuah kunci pengaturan (compare-and-swap).
+ * Menyetel `key` = `nilaiBaru` HANYA bila nilainya sekarang == `nilaiLama`
+ * (atau baris belum ada & `nilaiLama` === ''). Kembalikan true bila kita
+ * yang menang — dipakai lazy-cron agar request paralel tidak dobel-jalan.
+ */
+export async function klaimCfg(
+  db: D1Database, key: string, nilaiLama: string, nilaiBaru: string
+): Promise<boolean> {
+  if (nilaiLama === '') {
+    // Belum ada baris → coba INSERT; gagal (UNIQUE) berarti sudah diisi orang lain.
+    try {
+      const r = await db.prepare('INSERT INTO pengaturan (key, value) VALUES (?, ?)').bind(key, nilaiBaru).run()
+      if (r.meta.changes) return true
+    } catch { /* baris sudah ada, lanjut ke UPDATE bersyarat di bawah */ }
+  }
+  const u = await db.prepare(
+    'UPDATE pengaturan SET value = ? WHERE key = ? AND value = ?'
+  ).bind(nilaiBaru, key, nilaiLama).run()
+  return !!u.meta.changes
+}
+
+/** Base URL publik: pakai setting `situs_url` bila diisi, jika tidak dari request. */
+export async function baseUrlPublik(c: any, db: D1Database): Promise<string> {
+  const set = (await cfgVal(db, 'situs_url', '')).trim().replace(/\/+$/, '')
+  if (/^https?:\/\/[^/\s]+$/i.test(set)) return set
+  try { return new URL(c.req.url).origin } catch { return '' }
+}
+
 // ---------- Klien REST OpenWA ----------
 
 async function openwaFetch(

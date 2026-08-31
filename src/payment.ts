@@ -589,6 +589,7 @@ export async function verifikasiCallback(
 
   if (provider === 'midtrans') {
     // signature_key = SHA512(order_id + status_code + gross_amount + server_key)
+    if (!cfg.serverKey) return { sah: false, error: 'Server Key Midtrans belum dikonfigurasi.' }
     const orderId = String(body.order_id || '')
     const perlu = orderId + String(body.status_code || '') + String(body.gross_amount || '') + cfg.serverKey
     const bytes = await crypto.subtle.digest('SHA-512', new TextEncoder().encode(perlu))
@@ -623,6 +624,7 @@ export async function verifikasiCallback(
 
   if (provider === 'duitku') {
     // signature = MD5(merchantCode + amount + merchantOrderId + apiKey)
+    if (!cfg.serverKey || !cfg.merchantKode) return { sah: false, error: 'Kredensial Duitku belum dikonfigurasi.' }
     const perlu = cfg.merchantKode + String(body.amount || '') + String(body.merchantOrderId || '') + cfg.serverKey
     const hex = await md5hex(perlu)
     if (!samaAman(hex, String(body.signature || ''))) {
@@ -638,8 +640,10 @@ export async function verifikasiCallback(
   }
 
   if (provider === 'tripay') {
+    const kunci = cfg.callbackSecret || cfg.serverKey
+    if (!kunci) return { sah: false, error: 'Kredensial Tripay belum dikonfigurasi.' }
     const sig = header('x-callback-signature') || ''
-    const hex = await hmacSha256Hex(cfg.callbackSecret || cfg.serverKey, rawBody)
+    const hex = await hmacSha256Hex(kunci, rawBody)
     if (!samaAman(hex, String(sig))) {
       return { sah: false, error: 'Signature Tripay tidak cocok.' }
     }

@@ -6,19 +6,15 @@
 
 import type { OpenWAEnv } from './openwa'
 import {
-  cfgVal, getWAConfig, siapKirim, kirimAman, normalWA, rupiah
+  cfgVal, setCfgVal as setCfg, klaimCfg, getWAConfig, siapKirim, kirimAman, normalWA, rupiah
 } from './openwa'
-
-/** Simpan satu nilai pengaturan (upsert) */
-async function setCfg(db: D1Database, key: string, value: string): Promise<void> {
-  await db.prepare(
-    'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-  ).bind(key, value).run()
-}
 
 /** Bulan berjalan WIB, format YYYY-MM */
 export function bulanWIB(mundur = 0): string {
   const d = new Date(Date.now() + 7 * 3600 * 1000)
+  // Nol-kan tanggal dulu supaya mundur bulan tidak "overflow" saat tanggal 29-31
+  // menuju bulan yang lebih pendek (mis. 31 Mar - 1 bulan -> 3 Mar, bukan Feb).
+  d.setUTCDate(1)
   d.setUTCMonth(d.getUTCMonth() - mundur)
   return d.toISOString().slice(0, 7)
 }
@@ -78,8 +74,11 @@ export async function hitungRekap(db: D1Database, periode: string): Promise<Reka
     omzet: o,
     jumlahNota: omzet?.n ?? 0,
     pemasukanLain: l,
-    pengeluaran: k,
-    laba: o + l - k,
+    // Pengeluaran akrual = yang sudah dibukukan + investasi baglog bulan itu
+    // yang BELUM sempat dibukukan lazy-cron (inv). Tanpa `inv`, laba terlihat
+    // lebih besar sampai cron membukukannya — angka jadi tergantung timing.
+    pengeluaran: k + inv,
+    laba: o + l - k - inv,
     kasMasuk: (lunas?.v ?? 0) + l,
     piutangAkhir: piutang?.v ?? 0,
     panenKg: Math.round(kg * 100) / 100,
@@ -107,8 +106,10 @@ export async function jalankanTutupBuku(
     }
 
     const periode = bulanWIB(1) // bulan lalu
-    const sudah = await db.prepare('SELECT periode FROM buku_tutup WHERE periode = ?').bind(periode).first<any>()
-    if (sudah) return { dijalankan: false, alasan: `Periode ${periode} sudah ditutup.` }
+
+    // Pastikan biaya baglog bulan itu sudah dibukukan SEBELUM disnapshot,
+    // supaya tidak ada biaya yang "yatim" setelah periode terkunci.
+    await jalankanBiayaBaglog(env).catch(() => {})
 
     const r = await hitungRekap(db, periode)
     // Periode benar-benar kosong (belum ada transaksi apa pun) → jangan ditutup
@@ -116,7 +117,25 @@ export async function jalankanTutupBuku(
       return { dijalankan: false, alasan: `Periode ${periode} tidak punya transaksi.` }
     }
 
-    await simpanTutupBuku(db, r, null, true)
+    // KLAIM ATOMIK: baris buku_tutup sendiri jadi kuncinya. Hanya pemanggil
+    // pertama yang berhasil INSERT yang lanjut kirim WA & catat audit.
+    const ins = await db.prepare(`
+      INSERT INTO buku_tutup
+        (periode, ditutup_oleh, otomatis, omzet, pemasukan_lain, pengeluaran, laba,
+         kas_masuk, piutang_akhir, panen_kg, hpp_per_kg, catatan)
+      VALUES (?, NULL, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'Ditutup otomatis oleh sistem')
+      ON CONFLICT(periode) DO NOTHING
+    `).bind(
+      periode, r.omzet, r.pemasukanLain, r.pengeluaran, r.laba,
+      r.kasMasuk, r.piutangAkhir, r.panenKg, r.hppPerKg
+    ).run()
+    if (!ins.meta.changes) return { dijalankan: false, alasan: `Periode ${periode} sudah ditutup.` }
+
+    await db.prepare(`
+      INSERT INTO audit_log (user_id, nama, aksi, entitas, entitas_id, detail)
+      VALUES (NULL, 'SISTEM', 'ubah', 'buku-tutup', ?, ?)
+    `).bind(periode, `Tutup buku ${periode}: omzet ${r.omzet}, pengeluaran ${r.pengeluaran}, laba ${r.laba}`)
+      .run().catch(() => {})
     await setCfg(db, 'otomatis_tutup_terakhir', new Date().toISOString())
     await kirimRekapKeOwner(env, r, true)
     return { dijalankan: true, periode }
@@ -214,7 +233,10 @@ export async function jalankanRekapBulanan(
     // Kirim di awal bulan (tanggal 1-3) supaya owner cepat dapat laporan
     if (tanggalHariWIB() > 3) return { dijalankan: false, alasan: 'Lewat jendela awal bulan.' }
 
-    await setCfg(db, 'otomatis_rekap_terakhir', `proses:${periode}`)
+    // KLAIM ATOMIK: hanya satu request yang boleh lanjut kirim.
+    if (!(await klaimCfg(db, 'otomatis_rekap_terakhir', terakhir, `proses:${periode}`))) {
+      return { dijalankan: false, alasan: 'Sedang diproses request lain.' }
+    }
     const r = await hitungRekap(db, periode)
     if (r.omzet === 0 && r.pengeluaran === 0) {
       await setCfg(db, 'otomatis_rekap_terakhir', periode) // tidak ada yang perlu dikirim
@@ -257,7 +279,7 @@ export async function jalankanBiayaBaglog(
 
     const stmts = (results as any[]).map((b) =>
       db.prepare(`
-        INSERT INTO pengeluaran (tanggal, kategori, jumlah, keterangan, user_id, no_bukti, sumber)
+        INSERT OR IGNORE INTO pengeluaran (tanggal, kategori, jumlah, keterangan, user_id, no_bukti, sumber)
         VALUES (?, 'bibit', ?, ?, ?, ?, 'auto:baglog')
       `).bind(
         b.tanggal, b.jumlah * b.biaya_per_baglog,
@@ -363,8 +385,10 @@ export async function rekonsiliasiKas(db: D1Database, periode: string): Promise<
 // AGREGATOR: dipanggil dari denyut
 // ------------------------------------------------------------
 export async function jalankanPembukuanOtomatis(env: OpenWAEnv): Promise<void> {
+  // Biaya baglog HARUS selesai dibukukan sebelum tutup buku, supaya tidak ada
+  // biaya yang "yatim" begitu periode terkunci.
+  await jalankanBiayaBaglog(env).catch(() => {})
   await Promise.allSettled([
-    jalankanBiayaBaglog(env),
     jalankanRekonPiutang(env),
     jalankanTutupBuku(env),
     jalankanRekapBulanan(env)
