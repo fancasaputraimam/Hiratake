@@ -5,11 +5,11 @@
 const $ = (id) => document.getElementById(id)
 
 const LBL_STATUS = {
-  baru: { t: 'Pesanan Diterima', ket: 'Pesanan Anda sudah kami terima.', c: 'bg-blue-100 text-blue-700', i: 'fa-inbox', pita: 'from-blue-500 to-blue-400' },
-  diproses: { t: 'Sedang Diproses', ket: 'Jamur sedang kami siapkan & sortir.', c: 'bg-amber-100 text-amber-700', i: 'fa-fire-burner', pita: 'from-amber-500 to-amber-400' },
-  siap: { t: 'Siap Dikirim', ket: 'Pesanan siap dikirim atau diambil.', c: 'bg-indigo-100 text-indigo-700', i: 'fa-box-open', pita: 'from-indigo-500 to-indigo-400' },
-  selesai: { t: 'Selesai', ket: 'Terima kasih sudah berbelanja!', c: 'bg-green-100 text-green-700', i: 'fa-circle-check', pita: 'from-green-600 to-green-500' },
-  batal: { t: 'Dibatalkan', ket: 'Pesanan ini dibatalkan.', c: 'bg-red-100 text-red-700', i: 'fa-circle-xmark', pita: 'from-red-500 to-red-400' }
+  baru: { t: 'Pesanan Diterima', ket: 'Pesanan Anda sudah kami terima.', c: 'bg-blue-100 text-blue-700', i: 'fa-inbox' },
+  diproses: { t: 'Sedang Diproses', ket: 'Jamur sedang kami siapkan & sortir.', c: 'bg-amber-100 text-amber-700', i: 'fa-fire-burner' },
+  siap: { t: 'Siap Dikirim', ket: 'Pesanan siap dikirim atau diambil.', c: 'bg-indigo-100 text-indigo-700', i: 'fa-box-open' },
+  selesai: { t: 'Selesai', ket: 'Terima kasih sudah berbelanja!', c: 'bg-green-100 text-green-700', i: 'fa-circle-check' },
+  batal: { t: 'Dibatalkan', ket: 'Pesanan ini dibatalkan.', c: 'bg-red-100 text-red-700', i: 'fa-circle-xmark' }
 }
 const LBL_BAYAR = {
   belum: { t: 'Belum Dibayar', c: 'bg-red-50 text-red-700 border-red-200', i: 'fa-hourglass-half' },
@@ -62,7 +62,7 @@ async function api(url, opts) {
 
 // ---------- render kartu pesanan ----------
 function kartuPesanan(p) {
-  const st = LBL_STATUS[p.status] || { t: p.status || '-', ket: '', c: 'bg-gray-100 text-gray-700', i: 'fa-circle-info', pita: 'from-gray-400 to-gray-300' }
+  const st = LBL_STATUS[p.status] || { t: p.status || '-', ket: '', c: 'bg-gray-100 text-gray-700', i: 'fa-circle-info' }
   const sb = LBL_BAYAR[p.statusBayar] || LBL_BAYAR.belum
   const metode = LBL_METODE[p.metodeBayar] || (p.metodeBayar ? p.metodeBayar : '-')
   const batal = p.status === 'batal'
@@ -126,9 +126,6 @@ function kartuPesanan(p) {
 
   return `
   <article class="bg-white rounded-2xl shadow-sm ring-1 ring-sumi/5 overflow-hidden">
-    <!-- Pita status -->
-    <div class="h-1.5 bg-gradient-to-r ${st.pita}"></div>
-
     <!-- Kepala -->
     <div class="p-5 pb-4 flex items-start justify-between gap-3 flex-wrap">
       <div class="min-w-0">
@@ -220,7 +217,6 @@ function tampilkan(daftar, judul) {
 function kerangkaMuat(n) {
   return Array.from({ length: n || 1 }, () => `
     <div class="bg-white rounded-2xl shadow-sm ring-1 ring-sumi/5 overflow-hidden animate-pulse">
-      <div class="h-1.5 bg-sumi/10"></div>
       <div class="p-5 space-y-3">
         <div class="h-3 w-24 bg-sumi/10 rounded"></div>
         <div class="h-6 w-44 bg-sumi/10 rounded"></div>
