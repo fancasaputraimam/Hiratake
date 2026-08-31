@@ -196,6 +196,7 @@ ${asetCss}
         <li><a href="#keunggulan" class="nav-link hover:text-vermillion transition">Keunggulan</a></li>
         <li><a href="#proses" class="nav-link hover:text-vermillion transition">Proses</a></li>
         <li><a href="#galeri" class="nav-link hover:text-vermillion transition">Galeri</a></li>
+        <li><a href="/lacak" class="nav-link hover:text-vermillion transition"><i class="fas fa-magnifying-glass-location mr-1"></i>Lacak Pesanan</a></li>
         <li>
           <a href="${pesananOnlineAktif ? '#produk' : '#kontak'}" class="bg-vermillion text-white px-5 py-2 rounded-full hover:bg-red-700 transition shadow">
             <i class="fas fa-shopping-basket mr-1"></i> Pesan
@@ -212,6 +213,7 @@ ${asetCss}
       <a href="#keunggulan" class="block py-2 hover:text-vermillion">Keunggulan</a>
       <a href="#proses" class="block py-2 hover:text-vermillion">Proses</a>
       <a href="#galeri" class="block py-2 hover:text-vermillion">Galeri</a>
+      <a href="/lacak" class="block py-2 hover:text-vermillion"><i class="fas fa-magnifying-glass-location mr-1"></i>Lacak Pesanan</a>
       <a href="${pesananOnlineAktif ? '#produk' : '#kontak'}" class="block py-2 text-vermillion font-semibold">Pesan Sekarang</a>
     </div>
   </header>

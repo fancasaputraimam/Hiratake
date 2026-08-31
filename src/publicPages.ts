@@ -54,7 +54,7 @@ ${asetCss}
         </div>
       </a>
       <div class="flex items-center gap-3 text-sm">
-        <a href="/lacak" class="hover:text-vermillion transition hidden sm:inline"><i class="fas fa-magnifying-glass-location mr-1"></i>Lacak</a>
+        <a href="/lacak" class="hover:text-vermillion transition"><i class="fas fa-magnifying-glass-location mr-1"></i>Lacak</a>
         <a href="/" class="border border-sumi/20 hover:bg-white px-4 py-2 rounded-full transition"><i class="fas fa-arrow-left mr-1"></i>Beranda</a>
       </div>
     </nav>
@@ -302,11 +302,15 @@ export function lacakPage(s: IdentitasSitus): string {
   const isi = `
     <div class="mb-6">
       <h1 class="font-serifjp text-2xl md:text-3xl font-bold">Lacak Pesanan</h1>
-      <p class="text-sm text-sumi/60 mt-1">Pantau status pesanan Anda. Verifikasi lewat kode WhatsApp agar data tetap aman.</p>
+      <p class="text-sm text-sumi/60 mt-1">Pantau status pesanan Anda langsung di website. Pesanan yang dibuat dari perangkat ini muncul otomatis di bawah — tanpa perlu WhatsApp.</p>
     </div>
 
-    <!-- Form minta OTP -->
+    <!-- Pesanan yang tersimpan di perangkat ini (localStorage) -->
+    <section id="lacak-tersimpan" class="hidden mb-6 space-y-4 max-w-lg"></section>
+
+    <!-- Form minta OTP (untuk perangkat lain / riwayat lama) -->
     <section id="lacak-form-area" class="bg-white rounded-2xl shadow p-5 max-w-lg space-y-4">
+      <p class="text-sm text-sumi/60">Memesan dari perangkat lain? Masukkan nomor WhatsApp untuk melihat semua pesanan Anda.</p>
       <div>
         <label for="lacak-wa" class="block text-sm font-medium mb-1">Nomor WhatsApp yang dipakai memesan</label>
         <input id="lacak-wa" type="tel" placeholder="081234567890" class="form-input" autocomplete="tel">

@@ -173,6 +173,58 @@ async function muatToken(token) {
   }
 }
 
+// ---------- pesanan tersimpan di perangkat ini (tanpa WhatsApp) ----------
+function bacaPesananLokal() {
+  try {
+    const list = JSON.parse(localStorage.getItem('hiratake_pesanan') || '[]')
+    return Array.isArray(list) ? list.filter((x) => x && x.token) : []
+  } catch (e) { return [] }
+}
+function hapusPesananLokal(kode) {
+  try {
+    const list = bacaPesananLokal().filter((x) => x.kode !== kode)
+    localStorage.setItem('hiratake_pesanan', JSON.stringify(list))
+  } catch (e) { /* abaikan */ }
+}
+
+async function muatTersimpan() {
+  const box = $('lacak-tersimpan')
+  if (!box) return
+  const simpan = bacaPesananLokal()
+  if (!simpan.length) { box.classList.add('hidden'); return }
+
+  box.classList.remove('hidden')
+  box.innerHTML = `<p class="text-sm text-sumi/60 mb-2"><i class="fas fa-mobile-screen mr-1"></i>Pesanan Anda dari perangkat ini</p>
+    <div class="bg-white rounded-2xl shadow p-6 text-center text-sumi/50">
+      <i class="fas fa-spinner fa-spin text-xl"></i><p class="text-sm mt-2">Memuat…</p></div>`
+
+  const hasil = await Promise.all(simpan.map((s) =>
+    api('/api/lacak/token/' + encodeURIComponent(s.token))
+      .then((d) => ({ ...d.pesanan, _kode: s.kode }))
+      .catch(() => null)
+  ))
+  const ok = hasil.filter(Boolean)
+  // Buang token yang sudah tidak valid dari daftar lokal
+  hasil.forEach((r, i) => { if (!r) hapusPesananLokal(simpan[i].kode) })
+
+  if (!ok.length) { box.classList.add('hidden'); return }
+  box.innerHTML = `<div class="flex items-center justify-between mb-2">
+      <p class="text-sm text-sumi/60"><i class="fas fa-mobile-screen mr-1"></i>Pesanan Anda dari perangkat ini</p>
+      <span class="text-[11px] text-sumi/40">tersimpan di browser</span>
+    </div>` +
+    ok.map((p) => {
+      const kartu = kartuPesanan(p)
+      return kartu.replace('</article>',
+        `<button data-hapus="${esc(p.kode)}" class="mt-3 text-[11px] text-sumi/40 hover:text-vermillion transition">
+           <i class="fas fa-xmark mr-1"></i>Hapus dari daftar perangkat ini</button></article>`)
+    }).join('')
+
+  box.querySelectorAll('[data-hapus]').forEach((b) => b.addEventListener('click', () => {
+    hapusPesananLokal(b.getAttribute('data-hapus'))
+    muatTersimpan()
+  }))
+}
+
 // ---------- alur 2: OTP WhatsApp ----------
 let COOLDOWN = 0
 let TIMER_CD = null
@@ -249,6 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
     muatToken(token)
     return
   }
+  muatTersimpan()
   $('lacak-kirim').addEventListener('click', kirimOTP)
   $('lacak-verifikasi').addEventListener('click', verifikasiKode)
   $('lacak-wa').addEventListener('keydown', (e) => { if (e.key === 'Enter') kirimOTP() })

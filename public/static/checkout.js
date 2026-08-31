@@ -17,6 +17,19 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Simpan pesanan ke perangkat ini supaya bisa dilacak di /lacak tanpa WhatsApp.
+function simpanPesananLokal(kode, token) {
+  if (!kode || !token) return;
+  try {
+    const kunci = 'hiratake_pesanan';
+    let list = JSON.parse(localStorage.getItem(kunci) || '[]');
+    if (!Array.isArray(list)) list = [];
+    list = list.filter((x) => x && x.kode !== kode);
+    list.unshift({ kode, token, tgl: new Date().toISOString().slice(0, 10) });
+    localStorage.setItem(kunci, JSON.stringify(list.slice(0, 12)));
+  } catch (e) { /* localStorage bisa dimatikan / mode privat */ }
+}
+
 // ---------- Muat info checkout ----------
 async function muat() {
   try {
@@ -276,16 +289,21 @@ el('checkout-form')?.addEventListener('submit', async (e) => {
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || 'Gagal membuat pesanan.');
 
+    // Ingat pesanan di perangkat ini → muncul di /lacak tanpa perlu WhatsApp.
+    simpanPesananLokal(d.kode, d.token);
+
     if (d.metode === 'qris' && d.bayarUrl) {
       tampil(`✅ Pesanan <strong>${esc(d.kode)}</strong> dibuat. Mengarahkan ke halaman pembayaran…`, true);
       setTimeout(() => { window.location.href = d.bayarUrl; }, 900);
       return;
     }
 
-    // Tunai: tampilkan konfirmasi + tautan lacak
+    // Tunai: tampilkan konfirmasi + tombol lacak
     tampil(
       `✅ Pesanan <strong>${esc(d.kode)}</strong> tercatat!<br>Total ${rupiah(d.totalBayar)} — bayar tunai saat barang diterima.` +
-      `<br><a href="${esc(d.lacakUrl)}" class="underline font-semibold">Lacak pesanan ini</a>`, true);
+      `<div class="mt-3"><a href="${esc(d.lacakUrl)}" class="inline-block bg-vermillion hover:bg-red-700 text-white text-sm font-semibold px-6 py-2.5 rounded-full transition">` +
+      `<i class="fas fa-magnifying-glass-location mr-2"></i>Lacak Pesanan Ini</a></div>` +
+      `<p class="text-xs text-sumi/50 mt-2">Pesanan juga tersimpan di halaman <a href="/lacak" class="underline">Lacak</a> pada perangkat ini.</p>`, true);
     KERANJANG.clear();
     renderProduk(); hitung();
     el('ck-catatan').value = '';
