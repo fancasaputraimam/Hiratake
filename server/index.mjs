@@ -46,7 +46,13 @@ const muatEnv = (berkas) => {
     if (process.env[kunci] !== undefined) continue
     let nilai = t.slice(pisah + 1).trim()
     // Buang tanda kutip pembungkus bila ada
-    if (nilai.length > 1 && /^(".*"|'.*')$/s.test(nilai)) nilai = nilai.slice(1, -1)
+    if (nilai.length > 1 && /^(".*"|'.*')$/s.test(nilai)) {
+      nilai = nilai.slice(1, -1)
+    } else {
+      // Nilai tak berkutip: buang komentar sebaris ("  # ...") — konvensi dotenv.
+      // Hanya '#' yang didahului spasi/tab, supaya token seperti abc#def tetap utuh.
+      nilai = nilai.replace(/\s+#.*$/, '').trim()
+    }
     process.env[kunci] = nilai
   }
   return true

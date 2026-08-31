@@ -35,6 +35,9 @@ import { testimoniRoutes } from './testimoniRoutes'
 // Binding: D1 + secret OpenWA & payment gateway
 // (semua kredensial TIDAK pernah dikirim ke frontend)
 type Bindings = AuthBindings & {
+  OPENWA_URL?: string
+  OPENWA_SESSION?: string
+  OPENWA_AKTIF?: string
   OPENWA_API_KEY?: string
   OPENWA_WEBHOOK_SECRET?: string
   BAYAR_SERVER_KEY?: string

@@ -2,19 +2,24 @@
 //  Modul Integrasi OpenWA — WhatsApp API Gateway
 //  Repo: https://github.com/rmyndharis/OpenWA
 //
-//  OpenWA adalah gateway self-hosted (NestJS + whatsapp-web.js/baileys)
-//  yang TIDAK bisa jalan di Cloudflare Workers. Pola integrasi:
-//    Hiratake (Cloudflare)  --REST-->  OpenWA (VPS)  --> WhatsApp
-//    Hiratake (Cloudflare)  <--webhook--  OpenWA (VPS)
+//  OpenWA adalah gateway self-hosted (NestJS + whatsapp-web.js/baileys).
+//  Hiratake hanya memanggilnya via REST + menerima webhook:
+//    Hiratake  --REST + X-API-Key-->  OpenWA  -->  WhatsApp
+//    Hiratake  <--webhook + HMAC----  OpenWA
 //
-//  Semua kredensial (URL, API key, secret webhook) disimpan sebagai
-//  Cloudflare secret / .dev.vars — TIDAK PERNAH di frontend.
+//  Konfigurasi (URL, sesi, API key, secret webhook, saklar aktif) bisa
+//  diisi lewat environment variable ATAU dari dashboard — env selalu menang.
+//  Di VPS: cukup isi semuanya di berkas .env (lihat .env.example), tidak
+//  perlu buka dashboard. Kredensial TIDAK PERNAH dikirim ke frontend.
 // ============================================================
 import { sha256hex } from './auth'
 
 export type OpenWAEnv = {
   DB: D1Database
-  OPENWA_API_KEY?: string      // secret: X-API-Key untuk OpenWA
+  OPENWA_URL?: string           // env: URL gateway OpenWA (menang atas dashboard)
+  OPENWA_SESSION?: string       // env: nama sessionId di OpenWA
+  OPENWA_AKTIF?: string         // env: "1"/"true" = paksa aktif tanpa saklar dashboard
+  OPENWA_API_KEY?: string       // secret: X-API-Key untuk OpenWA
   OPENWA_WEBHOOK_SECRET?: string // secret: HMAC-SHA256 verifikasi webhook masuk
 }
 
@@ -55,9 +60,12 @@ export function sensorWA(wa: string): string {
 
 // ---------- Konfigurasi ----------
 
+/** Apakah string environment bernilai "menyala"? ("1" atau "true"). */
+export const envMenyala = (v: string | undefined): boolean => v === '1' || v === 'true'
+
 export async function getWAConfig(env: OpenWAEnv): Promise<WAConfig> {
-  // Sekalian ambil kredensial dari database (bila tidak dipasang di server),
-  // supaya pemilik bisa mengisinya dari dashboard tanpa akses server.
+  // Alamat & kredensial bisa datang dari environment (diprioritaskan — praktis
+  // untuk VPS: semua di .env) atau dari database (diisi lewat dashboard).
   const { results } = await env.DB.prepare(
     `SELECT key, value FROM pengaturan WHERE key IN
      ('openwa_url','openwa_session','openwa_aktif','rahasia_openwa_api_key')`
@@ -65,11 +73,11 @@ export async function getWAConfig(env: OpenWAEnv): Promise<WAConfig> {
   const m: Record<string, string> = {}
   for (const r of results) m[r.key] = r.value
   return {
-    url: (m.openwa_url || '').replace(/\/+$/, ''),
-    session: m.openwa_session || '',
-    // Environment variable diprioritaskan; database sebagai alternatif dari web
+    url: (env.OPENWA_URL || m.openwa_url || '').replace(/\/+$/, ''),
+    session: env.OPENWA_SESSION || m.openwa_session || '',
     apiKey: env.OPENWA_API_KEY || m.rahasia_openwa_api_key || '',
-    aktif: m.openwa_aktif === '1'
+    // OPENWA_AKTIF di env memaksa aktif; selain itu ikut saklar dashboard.
+    aktif: envMenyala(env.OPENWA_AKTIF) || m.openwa_aktif === '1'
   }
 }
 
@@ -145,6 +153,46 @@ export async function ambilQR(cfg: WAConfig) {
 export async function mulaiSesi(cfg: WAConfig) {
   const r = await openwaFetch(cfg, `/api/sessions/${encodeURIComponent(cfg.session)}/start`, { method: 'POST' })
   return r.ok ? { ok: true, data: r.data } : { ok: false, error: r.error }
+}
+
+// ---------- Webhook ----------
+
+const WEBHOOK_EVENTS = ['message.received', 'session.status']
+
+/**
+ * Daftarkan (atau perbarui) webhook Hiratake di OpenWA.
+ * Dipanggil dari server — `secret` tetap di server, tidak pernah lewat browser.
+ */
+export async function daftarWebhook(cfg: WAConfig, webhookUrl: string, secret: string) {
+  if (!cfg.url || !cfg.session || !cfg.apiKey) {
+    return { ok: false, error: 'Konfigurasi OpenWA belum lengkap (URL, sesi, atau API key kosong).' }
+  }
+  if (!secret) return { ok: false, error: 'Webhook secret belum diisi. Simpan dulu di halaman Konfigurasi.' }
+  const r = await openwaFetch(cfg, `/api/sessions/${encodeURIComponent(cfg.session)}/webhooks`, {
+    method: 'POST',
+    body: JSON.stringify({ url: webhookUrl, events: WEBHOOK_EVENTS, secret })
+  })
+  return r.ok ? { ok: true, data: r.data } : { ok: false, error: r.error }
+}
+
+/**
+ * Cek apakah webhook Hiratake sudah terdaftar di OpenWA.
+ * `terdaftar: null` bila gateway tidak menyediakan daftar webhook (tidak fatal).
+ */
+export async function cekWebhook(
+  cfg: WAConfig,
+  webhookUrl: string
+): Promise<{ ok: boolean; terdaftar: boolean | null; error?: string }> {
+  if (!cfg.url || !cfg.session || !cfg.apiKey) {
+    return { ok: false, terdaftar: null, error: 'Konfigurasi OpenWA belum lengkap.' }
+  }
+  const r = await openwaFetch(cfg, `/api/sessions/${encodeURIComponent(cfg.session)}/webhooks`)
+  if (!r.ok) return { ok: false, terdaftar: null, error: r.error }
+  const d = r.data?.data ?? r.data
+  const arr = Array.isArray(d) ? d : null
+  if (!arr) return { ok: true, terdaftar: null }
+  const norm = (u: any) => String(u || '').replace(/\/+$/, '')
+  return { ok: true, terdaftar: arr.some((w: any) => norm(w?.url ?? w?.webhookUrl ?? w?.endpoint) === norm(webhookUrl)) }
 }
 
 // ---------- Pengiriman pesan (selalu tercatat di wa_pesan) ----------

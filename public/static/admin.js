@@ -2225,13 +2225,40 @@ async function loadWaConfig() {
     statusKredensial('wa-cfg-secret', 'wa-in-secret', 'Webhook secret',
       d.webhookSecretTerpasang, d.webhookSecretSumber, d.webhookSecretPetunjuk);
 
+    // URL / nama sesi / saklar aktif: bila diisi lewat .env server, kunci kolomnya
+    // (nilai server selalu menang) dan beri penanda "diatur di server" pada label.
+    const kunciDariServer = (idInput, sumber) => {
+      const input = document.getElementById(idInput);
+      if (!input) return;
+      const dariServer = sumber === 'server';
+      input.disabled = dariServer;
+      if (dariServer && input.type !== 'checkbox') input.placeholder = 'dikelola di server (.env)';
+      // Penanda "· diatur di server (.env)" — pada <label for=…> untuk kolom teks,
+      // atau di dalam <span> label pembungkus untuk checkbox.
+      const wadah = document.querySelector('label[for="' + idInput + '"]')
+        || input.closest('label')?.querySelector('span')
+        || input.parentElement;
+      if (!wadah) return;
+      let tag = wadah.querySelector('.wa-env-tag');
+      if (dariServer && !tag) {
+        tag = document.createElement('span');
+        tag.className = 'wa-env-tag text-[11px] font-normal text-green-600 ml-2';
+        tag.textContent = '· diatur di server (.env)';
+        wadah.appendChild(tag);
+      } else if (!dariServer && tag) {
+        tag.remove();
+      }
+    };
+    kunciDariServer('wa-cfg-url', d.urlSumber);
+    kunciDariServer('wa-cfg-session', d.sessionSumber);
+    kunciDariServer('wa-cfg-aktif', d.aktifSumber);
+
+    // Kredensial dari server (env) tak bisa dihapus lewat web
     const bisaUbah = d.apiKeySumber !== 'server' || d.webhookSecretSumber !== 'server';
-    const btnSimpan = document.getElementById('wa-simpan-kredensial');
     const btnHapus = document.getElementById('wa-hapus-kredensial');
-    if (btnSimpan) btnSimpan.disabled = !bisaUbah;
     if (btnHapus) btnHapus.disabled = !bisaUbah;
 
-    // Perintah siap-tempel untuk mendaftarkan webhook di OpenWA
+    // Perintah siap-tempel: cadangan bila "Daftarkan Webhook Otomatis" gagal
     const cmd = document.getElementById('wa-cfg-webhook-cmd');
     if (cmd) {
       const sesi = p.openwa_session || 'SESSION_ID';
@@ -2244,8 +2271,132 @@ async function loadWaConfig() {
        "events":["message.received","session.status"],
        "secret":"NILAI_OPENWA_WEBHOOK_SECRET"}'`;
     }
+
+    loadWaLangkah(d);
   } catch (ex) { toast(ex.message, false); }
 }
+
+// ---------- Panduan "Langkah Menghubungkan" ----------
+async function loadWaLangkah(dCfg) {
+  const ol = document.getElementById('wa-langkah-list');
+  const ringkas = document.getElementById('wa-langkah-ringkas');
+  if (!ol) return;
+  if (ringkas) ringkas.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Memeriksa…';
+
+  let d = dCfg, st = {}, wh = {};
+  try {
+    const [c1, c2, c3] = await Promise.all([
+      dCfg ? Promise.resolve(dCfg) : api('/api/admin/wa/pengaturan'),
+      api('/api/admin/wa/status').catch(() => ({})),
+      api('/api/admin/wa/webhook/cek').catch(() => ({}))
+    ]);
+    d = c1 || {}; st = c2 || {}; wh = c3 || {};
+  } catch (ex) {
+    ol.innerHTML = `<li class="text-sm text-vermillion">${waEsc(ex.message)}</li>`;
+    if (ringkas) ringkas.textContent = '';
+    return;
+  }
+
+  const p = d.pengaturan || {};
+  const punyaUrl = !!p.openwa_url;
+  const punyaSesi = !!p.openwa_session;
+  const punyaKey = !!d.apiKeyTerpasang;
+  const punyaSecret = !!d.webhookSecretTerpasang;
+  const dasarSiap = punyaUrl && punyaSesi && punyaKey;
+  const sesiReady = st.status === 'ready';
+  const perluQr = st.status === 'qr_ready';
+  const aktif = p.openwa_aktif === '1';
+
+  const tombol = (aksi, teks, gaya) =>
+    `<button type="button" onclick="waLangkahAksi('${aksi}')" class="shrink-0 text-xs ${gaya || 'border border-sumi/20 hover:bg-washi'} px-3 py-1.5 rounded-full transition">${teks}</button>`;
+
+  const item = (ok, judul, ket, aksiHtml) => `
+    <li class="flex items-start gap-2.5">
+      <i class="fas ${ok ? 'fa-circle-check text-green-600' : 'fa-circle-dot text-sumi/25'} mt-0.5 w-4 text-center"></i>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm ${ok ? 'text-sumi/70' : 'font-medium'}">${judul}</p>
+        ${ket ? `<p class="text-xs text-sumi/50 mt-0.5">${ket}</p>` : ''}
+      </div>
+      ${!ok && aksiHtml ? aksiHtml : ''}
+    </li>`;
+
+  const langkah = [];
+  langkah.push(item(punyaUrl, 'URL gateway OpenWA', punyaUrl ? waEsc(p.openwa_url) : 'Isi kolom "URL Gateway OpenWA" lalu Simpan.'));
+  langkah.push(item(punyaSesi, 'Nama sesi', punyaSesi ? waEsc(p.openwa_session) : 'Isi kolom "Nama / ID Sesi" (sama dengan di OpenWA) lalu Simpan.'));
+  langkah.push(item(punyaKey, 'API key OpenWA tersimpan', punyaKey ? 'Terpasang.' : 'Tempel di kolom "API Key OpenWA" lalu Simpan.'));
+  langkah.push(item(punyaSecret, 'Webhook secret tersimpan', punyaSecret ? 'Terpasang.' : 'Isi kolom "Webhook Secret" (teks acak) lalu Simpan.'));
+  langkah.push(item(
+    sesiReady, 'Sesi WhatsApp tersambung',
+    !dasarSiap ? 'Selesaikan langkah 1–3 dulu.'
+      : sesiReady ? 'Nomor sudah login.'
+      : perluQr ? 'Sesi menunggu QR discan.'
+      : st.pesan || `Status sesi: ${waEsc(st.status || 'tidak diketahui')}.`,
+    !dasarSiap ? '' : perluQr ? tombol('qr', 'Tampilkan QR') : tombol('mulai', 'Mulai Sesi')
+  ));
+  langkah.push(item(
+    wh.terdaftar === true, 'Webhook terdaftar di OpenWA',
+    !dasarSiap || !punyaSecret ? 'Butuh URL, sesi, API key & webhook secret dulu.'
+      : wh.terdaftar === true ? 'Balasan otomatis & OTP masuk siap.'
+      : wh.terdaftar === null ? 'Tidak bisa dicek otomatis — klik untuk mendaftarkan.'
+      : 'Belum terdaftar.',
+    (!dasarSiap || !punyaSecret) ? '' : tombol('webhook', 'Daftarkan Webhook', 'border border-green-600 text-green-700 hover:bg-green-50')
+  ));
+  langkah.push(item(aktif, 'Integrasi diaktifkan', aktif ? 'Saklar utama menyala.' : 'Centang "Aktifkan integrasi WhatsApp" lalu Simpan.'));
+
+  ol.innerHTML = langkah.join('');
+
+  if (ringkas) {
+    if (d.siap && sesiReady) {
+      ringkas.innerHTML = '<span class="wa-pill wa-pill-ok"><i class="fas fa-circle text-[6px]"></i>Siap — WhatsApp tersambung & aktif</span>';
+    } else if (d.siap) {
+      ringkas.innerHTML = '<span class="wa-pill wa-pill-warn"><i class="fas fa-circle text-[6px]"></i>Konfigurasi lengkap — sesi WhatsApp belum tersambung</span>';
+    } else {
+      ringkas.innerHTML = '<span class="wa-pill wa-pill-off"><i class="fas fa-circle text-[6px]"></i>Belum siap — selesaikan langkah di bawah</span>';
+    }
+  }
+}
+
+// Aksi tombol di panel Langkah
+window.waLangkahAksi = async (jenis) => {
+  try {
+    if (jenis === 'uji') {
+      const r = await api('/api/admin/wa/uji-koneksi', { method: 'POST' });
+      toast(r.ready ? 'Gateway tersambung & sesi siap ✅' : `Gateway tersambung. Status sesi: ${r.status}`, r.ready);
+    } else if (jenis === 'mulai') {
+      await api('/api/admin/wa/mulai-sesi', { method: 'POST' });
+      toast('Sesi WhatsApp dimulai. Tunggu beberapa detik…', true);
+    } else if (jenis === 'qr') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.getElementById('btn-wa-qr')?.click();
+      return;
+    } else if (jenis === 'webhook') {
+      await api('/api/admin/wa/webhook/daftar', { method: 'POST' });
+      toast('Webhook didaftarkan ke OpenWA ✅', true);
+    }
+  } catch (ex) { toast(ex.message, false); }
+  setTimeout(() => { loadWaLangkah(); loadWaStatus(); }, jenis === 'mulai' ? 3500 : 500);
+};
+
+document.getElementById('btn-wa-langkah-cek')?.addEventListener('click', () => loadWaLangkah());
+
+document.getElementById('btn-wa-uji-koneksi')?.addEventListener('click', async (ev) => {
+  const b = ev.currentTarget;
+  const info = document.getElementById('wa-uji-koneksi-info');
+  b.disabled = true;
+  if (info) { info.textContent = 'Menghubungi gateway…'; info.className = 'text-xs text-sumi/50'; }
+  try {
+    const r = await api('/api/admin/wa/uji-koneksi', { method: 'POST' });
+    if (info) {
+      info.textContent = r.ready ? 'Tersambung — sesi siap ✅' : `Tersambung — status sesi: ${r.status}`;
+      info.className = 'text-xs ' + (r.ready ? 'text-matcha' : 'text-vermillion');
+    }
+  } catch (ex) {
+    if (info) { info.textContent = ex.message; info.className = 'text-xs text-vermillion'; }
+  } finally {
+    b.disabled = false;
+    loadWaLangkah();
+  }
+});
 
 // ---------- Kredensial OpenWA: simpan / hapus / lihat ----------
 (() => {
@@ -2269,32 +2420,16 @@ async function loadWaConfig() {
     });
   });
 
-  document.getElementById('wa-simpan-kredensial')?.addEventListener('click', async (ev) => {
-    const apikey = document.getElementById('wa-in-apikey');
-    const secret = document.getElementById('wa-in-secret');
-    const body = {};
-    if (apikey && !apikey.disabled && apikey.value.trim()) body.api_key = apikey.value.trim();
-    if (secret && !secret.disabled && secret.value.trim()) body.webhook_secret = secret.value.trim();
-
-    if (!Object.keys(body).length) { info('Isi dulu kolom yang ingin disimpan.', false); return; }
-
+  // Daftarkan webhook Hiratake ke OpenWA otomatis (server yang pegang secret)
+  document.getElementById('btn-wa-webhook-daftar')?.addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     btn.disabled = true;
-    info('Menyimpan…', true);
+    info('Mendaftarkan webhook ke OpenWA…', true);
     try {
-      const r = await fetch('/api/admin/wa/kredensial', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Gagal menyimpan kredensial.');
-      // Kosongkan kolom supaya nilai rahasia tidak tertinggal di layar
-      if (apikey) apikey.value = '';
-      if (secret) secret.value = '';
-      info(d.pesan || 'Kredensial disimpan.', true);
-      toast('Kredensial disimpan — tidak perlu restart server.', true);
-      if (typeof loadWaConfig === 'function') loadWaConfig();
+      const d = await api('/api/admin/wa/webhook/daftar', { method: 'POST' });
+      info('Webhook terdaftar: ' + (d.webhookUrl || 'OK'), true);
+      toast('Webhook didaftarkan ke OpenWA ✅', true);
+      if (typeof loadWaLangkah === 'function') loadWaLangkah();
     } catch (ex) {
       info(ex.message, false);
       toast(ex.message, false);
@@ -2332,7 +2467,26 @@ document.getElementById('form-wa-config')?.addEventListener('submit', async (e) 
   e.preventDefault();
   const nilai = (id) => document.getElementById(id).value.trim();
   const saklar = (id) => document.getElementById(id).checked ? '1' : '0';
+  const btn = document.getElementById('wa-simpan-semua');
+  if (btn) btn.disabled = true;
   try {
+    // 1) Kredensial dulu (owner saja) — hanya bila kolomnya diisi & tidak dikunci server
+    const apikey = document.getElementById('wa-in-apikey');
+    const secret = document.getElementById('wa-in-secret');
+    const kred = {};
+    if (apikey && !apikey.disabled && apikey.value.trim()) kred.api_key = apikey.value.trim();
+    if (secret && !secret.disabled && secret.value.trim()) kred.webhook_secret = secret.value.trim();
+    if (Object.keys(kred).length) {
+      if (ME && ME.role === 'owner') {
+        await api('/api/admin/wa/kredensial', { method: 'PUT', body: JSON.stringify(kred) });
+        if (apikey) apikey.value = '';
+        if (secret) secret.value = '';
+      } else {
+        toast('Kredensial hanya bisa diubah oleh owner — bagian lain tetap disimpan.', false);
+      }
+    }
+
+    // 2) Sisa konfigurasi (kunci yang dikunci .env diabaikan server)
     await api('/api/admin/wa/pengaturan', { method: 'PUT', body: JSON.stringify({
       openwa_url: nilai('wa-cfg-url'),
       openwa_session: nilai('wa-cfg-session'),
@@ -2352,6 +2506,7 @@ document.getElementById('form-wa-config')?.addEventListener('submit', async (e) 
     toast('Konfigurasi WhatsApp disimpan ✅');
     loadWaStatus(); loadWaConfig();
   } catch (ex) { toast(ex.message, false); }
+  finally { if (btn) btn.disabled = false; }
 });
 
 document.getElementById('btn-wa-pengingat')?.addEventListener('click', async () => {

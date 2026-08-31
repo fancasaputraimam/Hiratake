@@ -1597,27 +1597,47 @@ export const adminPage = () => `<!DOCTYPE html>
 
       <!-- Sub: Konfigurasi -->
       <div id="wa-sub-konfigurasi" class="wa-sub-panel hidden">
+
+        <!-- Panduan langkah + status hidup -->
+        <div id="wa-langkah-kartu" class="bg-white rounded-2xl shadow p-5 max-w-2xl mb-4">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="font-serifjp font-semibold">Langkah Menghubungkan ke OpenWA</h3>
+            <button type="button" id="btn-wa-langkah-cek" class="text-xs text-sumi/50 hover:text-sumi transition"><i class="fas fa-rotate mr-1"></i>Cek ulang</button>
+          </div>
+          <p id="wa-langkah-ringkas" class="text-sm mt-1 mb-3 text-sumi/60"><i class="fas fa-spinner fa-spin mr-1"></i>Memeriksa…</p>
+          <ol id="wa-langkah-list" class="space-y-2.5"></ol>
+        </div>
+
         <form id="form-wa-config" class="bg-white rounded-2xl shadow p-5 max-w-2xl space-y-4">
           <h3 class="font-serifjp font-semibold">Konfigurasi Gateway</h3>
           <p class="text-xs text-sumi/50 bg-washi rounded-lg p-3">
             <i class="fas fa-circle-info mr-1 text-vermillion"></i>
-            OpenWA adalah gateway WhatsApp yang dipasang di <strong>VPS Anda sendiri</strong> (tidak bisa jalan di Cloudflare).
-            Isi URL gateway & nama sesi di sini. <strong>API key dan secret webhook</strong> disimpan sebagai <em>secret server</em>, tidak lewat halaman ini.
+            Isi 4 kolom di bawah (URL gateway, nama sesi, API key, webhook secret), klik
+            <strong>Simpan Semua Konfigurasi</strong>, lalu ikuti panel <strong>Langkah Menghubungkan</strong> di atas.
+            OpenWA berjalan di <strong>VPS Anda sendiri</strong>.
+            <span class="block mt-1 text-sumi/40">Lanjutan: kelima nilai ini juga bisa diisi lewat berkas <code>.env</code> server —
+            bila diisi di sana, kolom terkait di halaman ini terkunci.</span>
           </p>
 
           <div>
             <label class="block text-sm mb-1 font-medium" for="wa-cfg-url">URL Gateway OpenWA</label>
-            <input id="wa-cfg-url" type="url" class="form-input" placeholder="https://wa.domainanda.com">
-            <p class="text-xs text-sumi/50 mt-1">Harus bisa diakses dari internet (Cloudflare memanggilnya). Jangan pakai <code>localhost</code> untuk produksi.</p>
+            <input id="wa-cfg-url" type="url" class="form-input" placeholder="http://127.0.0.1:2785">
+            <p class="text-xs text-sumi/50 mt-1">OpenWA di VPS yang sama: <code>http://127.0.0.1:2785</code>. Terpisah: URL yang bisa dijangkau server Hiratake.</p>
           </div>
           <div>
             <label class="block text-sm mb-1 font-medium" for="wa-cfg-session">Nama / ID Sesi</label>
             <input id="wa-cfg-session" type="text" class="form-input" placeholder="hiratake">
+            <p class="text-xs text-sumi/50 mt-1">Harus sama persis dengan nama sesi yang dibuat di dashboard OpenWA.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="btn-wa-uji-koneksi" class="text-sm border border-sumi/20 hover:bg-washi px-4 py-2 rounded-full transition"><i class="fas fa-plug mr-1"></i>Uji Koneksi</button>
+            <span id="wa-uji-koneksi-info" class="text-xs" role="status"></span>
           </div>
 
           <div class="border-t border-sumi/10 pt-4" id="wa-kredensial-area">
             <p class="text-sm font-medium mb-1">Kredensial OpenWA</p>
-            <p class="text-xs text-sumi/60 mb-3">Isi di sini lalu simpan — tidak perlu masuk ke server, tidak perlu restart.</p>
+            <p class="text-xs text-sumi/60 mb-3">Disimpan aman di server — tidak pernah dikirim balik ke browser. Ikut tersimpan saat Anda klik <strong>Simpan Semua Konfigurasi</strong>.</p>
 
             <div class="space-y-3">
               <div>
@@ -1639,23 +1659,23 @@ export const adminPage = () => `<!DOCTYPE html>
               </div>
 
               <div class="flex flex-wrap items-center gap-2">
-                <button type="button" id="wa-simpan-kredensial" class="btn-primary text-sm"><i class="fas fa-key mr-1"></i>Simpan Kredensial</button>
-                <button type="button" id="wa-hapus-kredensial" class="text-sm px-3 py-2 rounded-lg border border-sumi/15 hover:bg-washi text-sumi/70"><i class="fas fa-trash mr-1"></i>Hapus</button>
+                <button type="button" id="btn-wa-webhook-daftar" class="text-sm border border-green-600 text-green-700 hover:bg-green-50 px-4 py-2 rounded-full transition"><i class="fas fa-link mr-1"></i>Daftarkan Webhook Otomatis</button>
+                <button type="button" id="wa-hapus-kredensial" class="text-sm px-3 py-2 rounded-lg border border-sumi/15 hover:bg-washi text-sumi/70"><i class="fas fa-trash mr-1"></i>Hapus Kredensial</button>
                 <span id="wa-kredensial-info" class="text-xs" role="status"></span>
               </div>
             </div>
 
             <details class="mt-4 text-xs text-sumi/60">
-              <summary class="cursor-pointer font-medium text-vermillion">Cara mendapatkan kredensial &amp; opsi lanjutan (klik)</summary>
+              <summary class="cursor-pointer font-medium text-vermillion">Cara manual &amp; keterangan (klik)</summary>
               <div class="mt-2 space-y-2 bg-washi rounded-lg p-3">
-                <p><strong>1. API Key</strong> didapat dari pemasangan OpenWA Anda (biasanya diatur saat menjalankan gateway).</p>
-                <p><strong>2. Webhook Secret</strong> Anda tentukan sendiri — teks acak apa pun, minimal 20 karakter. Nilai yang sama dipasang di OpenWA.</p>
-                <p><strong>3. Daftarkan webhook di OpenWA</strong> agar balasan otomatis &amp; OTP jalan:</p>
+                <p><strong>API Key</strong> — dari dashboard OpenWA saat gateway dijalankan (hanya tampil sekali).</p>
+                <p><strong>Webhook Secret</strong> — Anda tentukan sendiri, teks acak minimal 20 karakter.</p>
+                <p><strong>Daftar webhook manual</strong> (hanya bila tombol "Daftarkan Webhook Otomatis" gagal) — jalankan di server:</p>
                 <pre class="bg-sumi text-washi p-2 rounded overflow-x-auto text-[11px]" id="wa-cfg-webhook-cmd"></pre>
-                <p class="pt-2 border-t border-sumi/10"><strong>Opsi lebih aman (opsional):</strong> kredensial boleh dipasang sebagai
-                environment variable di server. Bila diisi di sana, nilainya <strong>menang</strong> atas yang di sini dan kolom di atas
-                otomatis terkunci. Cara: isi <code>OPENWA_API_KEY</code> di berkas <code>.env</code> (VPS) lalu <code>pm2 restart hiratake</code>,
-                atau <code>npx wrangler pages secret put OPENWA_API_KEY</code> (Cloudflare).</p>
+                <p class="pt-2 border-t border-sumi/10"><strong>Lewat <code>.env</code> server:</strong> isi
+                <code>OPENWA_URL</code>, <code>OPENWA_SESSION</code>, <code>OPENWA_AKTIF=1</code>, <code>OPENWA_API_KEY</code>,
+                dan <code>OPENWA_WEBHOOK_SECRET</code> lalu <code>pm2 restart hiratake</code>.
+                Nilai <code>.env</code> <strong>menang</strong> atas halaman ini dan mengunci kolom terkait.</p>
               </div>
             </details>
           </div>
@@ -1686,7 +1706,7 @@ export const adminPage = () => `<!DOCTYPE html>
             <button type="button" id="btn-wa-pengingat" class="text-sm border border-sumi/20 hover:bg-washi px-4 py-2.5 rounded-full transition"><i class="fas fa-bell mr-1"></i>Jalankan Pengingat Sekarang</button>
           </div>
 
-          <button class="bg-vermillion hover:bg-red-700 text-white px-8 py-2.5 rounded-full font-medium transition">Simpan Konfigurasi</button>
+          <button type="submit" id="wa-simpan-semua" class="bg-vermillion hover:bg-red-700 text-white px-8 py-2.5 rounded-full font-medium transition">Simpan Semua Konfigurasi</button>
         </form>
       </div>
 

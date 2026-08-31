@@ -407,14 +407,14 @@ npx wrangler pages secret put BAYAR_CALLBACK_SECRET --project-name webapp
 Terintegrasi dengan **[OpenWA](https://github.com/rmyndharis/OpenWA)** — gateway WhatsApp open-source (MIT).
 
 ### ⚠️ Arsitektur (WAJIB dipahami)
-OpenWA adalah aplikasi **NestJS + Chromium/Baileys** yang **tidak bisa jalan di Cloudflare Workers**. Pola integrasinya:
+OpenWA adalah aplikasi **NestJS + Chromium/Baileys** yang butuh proses long-running + Chromium — jadi **dipasang di VPS sendiri** (tidak bisa jalan di Cloudflare Workers). Hiratake hanya memanggilnya via API:
 
 ```
-Hiratake (Cloudflare Pages)  --REST + X-API-Key-->  OpenWA (VPS Anda)  -->  WhatsApp
-Hiratake (Cloudflare Pages)  <--webhook + HMAC----  OpenWA (VPS Anda)
+Hiratake  --REST + X-API-Key-->  OpenWA (VPS Anda)  -->  WhatsApp
+Hiratake  <--webhook + HMAC----  OpenWA (VPS Anda)
 ```
 
-Jadi OpenWA **harus dipasang di VPS sendiri** (bukan di Cloudflare). Hiratake hanya memanggilnya via API.
+Bila Hiratake sendiri di-deploy di VPS (bukan Cloudflare), **paling praktis** taruh OpenWA di VPS yang sama dan sambungkan lewat `http://127.0.0.1:2785` — semua konfigurasi cukup di berkas `.env`, tanpa membuka dashboard.
 
 ### Fitur yang sudah jalan
 - ✅ **OTP login pengelola tanpa kata sandi** — kode 6 angka ke WhatsApp; sekali pakai, kedaluwarsa 5 menit, maks 5 salah-input, maks 3 permintaan/10 menit, rate-limit login tetap berlaku, balasan seragam agar username tidak bocor
@@ -449,11 +449,19 @@ cd /opt/openwa && docker compose -f docker-compose.dev.yml up -d
 
 Lalu:
 1. Buka dashboard OpenWA (`http://IP-VPS:2785`) → buat **API Key** (hanya tampil sekali)
-2. Buat sesi (mis. `hiratake`) → Start → **scan QR**
-3. Simpan kredensial — **cukup dari web**: Dashboard → tab **WhatsApp** → **Konfigurasi** → tempel *API Key OpenWA* & *Webhook Secret* → **Simpan Kredensial**. Berlaku langsung tanpa restart.
-   <br>Opsional bila ingin lebih ketat: pasang sebagai env var server (`OPENWA_API_KEY`, `OPENWA_WEBHOOK_SECRET`) — nilainya menang dan kolom web terkunci.
-4. Di tab yang sama: isi URL gateway + nama sesi, centang *Aktifkan integrasi*, Simpan, lalu **Uji Kirim**
-5. Daftarkan webhook di OpenWA (perintah `curl` siap-tempel tersedia di tab tersebut) dengan `secret` = nilai `OPENWA_WEBHOOK_SECRET`
+2. Buat sesi (mis. `hiratake`) → Start → **scan QR** (pakai nomor khusus!)
+3. **Cara VPS (disarankan)** — isi berkas `.env` lalu `pm2 restart hiratake`:
+   ```
+   OPENWA_URL=http://127.0.0.1:2785
+   OPENWA_SESSION=hiratake
+   OPENWA_AKTIF=1
+   OPENWA_API_KEY=<API key dari langkah 1>
+   OPENWA_WEBHOOK_SECRET=<teks acak buatan sendiri, min. 20 karakter>
+   ```
+   Semua nilai `.env` **menang** atas dashboard dan kolomnya otomatis terkunci. `PASANG_OPENWA=1 bash install-vps.sh` sudah menuliskan 3 baris pertama otomatis.
+   <br>**Cara dashboard (alternatif)** — Dashboard → tab **WhatsApp** → **Konfigurasi**: isi URL gateway + nama sesi, tempel *API Key* & *Webhook Secret* → **Simpan**, centang *Aktifkan integrasi*. Berlaku tanpa restart.
+4. Daftarkan webhook di OpenWA (perintah `curl` siap-tempel tersedia di tab **Konfigurasi**) dengan `secret` = nilai `OPENWA_WEBHOOK_SECRET`
+5. Uji: tab **WhatsApp** → **Uji Kirim**
 
 ### 🚨 Peringatan penting
 OpenWA memakai klien WhatsApp **tidak resmi** (bukan Cloud API Meta):

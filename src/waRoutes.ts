@@ -12,14 +12,18 @@ import {
 } from './auth'
 import {
   type OpenWAEnv, getWAConfig, siapKirim, statusSesi, ambilQR, mulaiSesi,
+  daftarWebhook, cekWebhook,
   kirimWA, kirimBanyak, normalWA, validWA, sensorWA, cfgVal, namaSitus,
   buatDanKirimOTP, verifikasiOTP, verifikasiTandaTangan, renderTemplate,
-  pesanDariTemplate, rupiah, tanggalID, hariIniWIB
+  pesanDariTemplate, rupiah, tanggalID, hariIniWIB, envMenyala
 } from './openwa'
 import { notifPiutang, jalankanPengingatHarian } from './waNotifikasi'
 import { saring, sensorRahasia, sumberRahasia, PETA_RAHASIA, itiRahasia, ambilRahasia } from './rahasia'
 
 export type WABindings = AuthBindings & {
+  OPENWA_URL?: string
+  OPENWA_SESSION?: string
+  OPENWA_AKTIF?: string
   OPENWA_API_KEY?: string
   OPENWA_WEBHOOK_SECRET?: string
 }
@@ -48,14 +52,26 @@ waRoutes.get('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async 
 
   const cfg = await getWAConfig(c.env as OpenWAEnv)
   const webhookDB = map.rahasia_openwa_webhook_secret || ''
+  const aktifDariEnv = envMenyala(c.env.OPENWA_AKTIF)
+
+  // `saring` membuang nilai rahasia — browser hanya menerima status.
+  // Nilai URL/sesi/saklar yang dikirim adalah nilai EFEKTIF (env menang),
+  // supaya dashboard menampilkan yang benar-benar dipakai server.
+  const pengaturan = saring(map)
+  pengaturan.openwa_url = cfg.url
+  pengaturan.openwa_session = cfg.session
+  if (aktifDariEnv) pengaturan.openwa_aktif = '1'
+
   return c.json({
-    // `saring` membuang nilai rahasia — browser hanya menerima status.
-    pengaturan: saring(map),
+    pengaturan,
     apiKeyTerpasang: !!cfg.apiKey,
     webhookSecretTerpasang: !!(c.env.OPENWA_WEBHOOK_SECRET || webhookDB),
-    // Dari mana kredensial berasal: 'server' (env) / 'web' (database) / 'kosong'
+    // Dari mana nilainya berasal: 'server' (env) / 'web' (database) / 'kosong'
     apiKeySumber: sumberRahasia(c.env.OPENWA_API_KEY, map.rahasia_openwa_api_key || ''),
     webhookSecretSumber: sumberRahasia(c.env.OPENWA_WEBHOOK_SECRET, webhookDB),
+    urlSumber: sumberRahasia(c.env.OPENWA_URL, map.openwa_url || ''),
+    sessionSumber: sumberRahasia(c.env.OPENWA_SESSION, map.openwa_session || ''),
+    aktifSumber: aktifDariEnv ? 'server' : 'web',
     // Hanya 4 huruf terakhir, untuk memastikan pemilik memasang kunci yang benar
     apiKeyPetunjuk: sensorRahasia(cfg.apiKey),
     webhookSecretPetunjuk: sensorRahasia(c.env.OPENWA_WEBHOOK_SECRET || webhookDB),
@@ -108,8 +124,17 @@ waRoutes.put('/api/admin/wa/kredensial', requireAuth(['owner']), async (c) => {
 waRoutes.put('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
   const body = await c.req.json<Record<string, string>>()
   const stmts: any[] = []
+
+  // Kunci yang sudah ditetapkan lewat environment server: abaikan dari form
+  // supaya nilai .env tidak tertimpa nilai kosong dari kolom yang dikunci.
+  const dikunciEnv = new Set<string>()
+  if (c.env.OPENWA_URL) dikunciEnv.add('openwa_url')
+  if (c.env.OPENWA_SESSION) dikunciEnv.add('openwa_session')
+  if (envMenyala(c.env.OPENWA_AKTIF)) dikunciEnv.add('openwa_aktif')
+
   for (const [key, valueRaw] of Object.entries(body)) {
     if (!KUNCI_WA.includes(key)) continue
+    if (dikunciEnv.has(key)) continue
     // Sabuk keamanan tambahan: kredensial tidak boleh lewat endpoint ini
     if (itiRahasia(key)) continue
     let value = String(valueRaw ?? '').trim()
@@ -203,6 +228,38 @@ waRoutes.post('/api/admin/wa/uji', requireAuth(['owner', 'admin']), async (c) =>
   const r = await kirimWA(c.env as OpenWAEnv, nomor, isi, { jenis: 'uji', entitas: 'auth', userId: me.id })
   if (!r.ok) return c.json({ error: r.error }, 502)
   return c.json({ sukses: true, messageId: r.messageId })
+})
+
+// Uji koneksi ke gateway: cek URL + API key + status sesi (tanpa kirim pesan)
+waRoutes.post('/api/admin/wa/uji-koneksi', requireAuth(['owner', 'admin']), async (c) => {
+  const cfg = await getWAConfig(c.env as OpenWAEnv)
+  const kurang: string[] = []
+  if (!cfg.url) kurang.push('URL gateway')
+  if (!cfg.session) kurang.push('nama sesi')
+  if (!cfg.apiKey) kurang.push('API key')
+  if (kurang.length) return c.json({ ok: false, error: `Lengkapi & simpan dulu: ${kurang.join(', ')}.` }, 400)
+  const s = await statusSesi(cfg)
+  if (!s.ok) return c.json({ ok: false, error: s.error }, 502)
+  return c.json({ ok: true, status: s.status, ready: s.status === 'ready' })
+})
+
+// Daftarkan webhook Hiratake ke OpenWA otomatis (secret tetap di server)
+waRoutes.post('/api/admin/wa/webhook/daftar', requireAuth(['owner', 'admin']), async (c) => {
+  const cfg = await getWAConfig(c.env as OpenWAEnv)
+  const secret = await ambilRahasia(c.env.DB, 'OPENWA_WEBHOOK_SECRET', c.env.OPENWA_WEBHOOK_SECRET)
+  const webhookUrl = new URL('/api/webhook/openwa', c.req.url).toString()
+  const r = await daftarWebhook(cfg, webhookUrl, secret)
+  if (!r.ok) return c.json({ error: r.error }, 502)
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'wa-webhook', cfg.session, 'Daftarkan webhook OpenWA otomatis')
+  return c.json({ sukses: true, webhookUrl })
+})
+
+// Cek apakah webhook Hiratake sudah terdaftar di OpenWA (best-effort)
+waRoutes.get('/api/admin/wa/webhook/cek', requireAuth(['owner', 'admin']), async (c) => {
+  const cfg = await getWAConfig(c.env as OpenWAEnv)
+  const webhookUrl = new URL('/api/webhook/openwa', c.req.url).toString()
+  const r = await cekWebhook(cfg, webhookUrl)
+  return c.json({ terdaftar: r.terdaftar, pesan: r.error || '' })
 })
 
 // ============================================================
