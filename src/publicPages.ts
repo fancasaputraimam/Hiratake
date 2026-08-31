@@ -54,7 +54,7 @@ ${asetCss}
         </div>
       </a>
       <div class="flex items-center gap-3 text-sm">
-        <a href="/lacak" class="hover:text-vermillion transition"><i class="fas fa-magnifying-glass-location mr-1"></i>Lacak</a>
+        <a href="/lacak" class="hover:text-vermillion transition" title="Lacak Pesanan"><i class="fas fa-magnifying-glass-location sm:mr-1"></i><span class="hidden sm:inline">Lacak</span></a>
         <a href="/" class="border border-sumi/20 hover:bg-white px-4 py-2 rounded-full transition"><i class="fas fa-arrow-left mr-1"></i>Beranda</a>
       </div>
     </nav>
@@ -306,11 +306,11 @@ export function lacakPage(s: IdentitasSitus): string {
     </div>
 
     <!-- Pesanan yang tersimpan di perangkat ini (localStorage) -->
-    <section id="lacak-tersimpan" class="hidden mb-6 space-y-4 max-w-lg"></section>
+    <section id="lacak-tersimpan" class="hidden mb-6 space-y-4 max-w-2xl"></section>
 
     <!-- Form minta OTP (untuk perangkat lain / riwayat lama) -->
-    <section id="lacak-form-area" class="bg-white rounded-2xl shadow p-5 max-w-lg space-y-4">
-      <p class="text-sm text-sumi/60">Memesan dari perangkat lain? Masukkan nomor WhatsApp untuk melihat semua pesanan Anda.</p>
+    <section id="lacak-form-area" class="bg-white rounded-2xl shadow-sm ring-1 ring-sumi/5 p-5 max-w-2xl space-y-4">
+      <p class="text-sm text-sumi/60"><i class="fab fa-whatsapp text-green-600 mr-1"></i>Memesan dari perangkat lain? Masukkan nomor WhatsApp untuk melihat semua pesanan Anda.</p>
       <div>
         <label for="lacak-wa" class="block text-sm font-medium mb-1">Nomor WhatsApp yang dipakai memesan</label>
         <input id="lacak-wa" type="tel" placeholder="081234567890" class="form-input" autocomplete="tel">
@@ -331,7 +331,7 @@ export function lacakPage(s: IdentitasSitus): string {
     </section>
 
     <!-- Hasil -->
-    <section id="lacak-hasil" class="hidden mt-6 space-y-4"></section>
+    <section id="lacak-hasil" class="hidden mt-6 space-y-4 max-w-2xl"></section>
   `
   return kerangka(s, 'Lacak Pesanan', isi, '<script src="/static/lacak.js"></script>')
 }
