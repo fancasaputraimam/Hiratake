@@ -123,7 +123,7 @@ waRoutes.put('/api/admin/wa/kredensial', requireAuth(['owner']), async (c) => {
 
 waRoutes.put('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async (c) => {
   const body = await c.req.json<Record<string, string>>()
-  const stmts: any[] = []
+  const pasangan: Array<{ key: string; value: string }> = []
 
   // Kunci yang sudah ditetapkan lewat environment server: abaikan dari form
   // supaya nilai .env tidak tertimpa nilai kosong dari kolom yang dikunci.
@@ -156,25 +156,28 @@ waRoutes.put('/api/admin/wa/pengaturan', requireAuth(['owner', 'admin']), async 
     if (key.startsWith('openwa_notif') || ['openwa_aktif', 'openwa_otp_login', 'openwa_otp_pesanan', 'openwa_autoreply'].includes(key)) {
       value = value === '1' || value === 'true' ? '1' : '0'
     }
-    stmts.push(c.env.DB.prepare(
-      'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-    ).bind(key, value))
+    pasangan.push({ key, value })
   }
-  if (!stmts.length) return c.json({ error: 'Tidak ada pengaturan yang dikenali.' }, 400)
+  if (!pasangan.length) return c.json({ error: 'Tidak ada pengaturan yang dikenali.' }, 400)
 
-  // Guard: mengaktifkan integrasi tanpa API key hanya akan bikin semua pesan gagal
-  if (body.openwa_aktif === '1') {
+  // Mengaktifkan integrasi tanpa API key hanya bikin semua pesan gagal.
+  // JANGAN tolak seluruh simpanan (dulu URL & sesi ikut hilang) — cukup tahan
+  // flag "aktif" saja lalu beri tahu pemilik.
+  let peringatan = ''
+  const itemAktif = pasangan.find((p) => p.key === 'openwa_aktif')
+  if (itemAktif?.value === '1') {
     const cfgCek = await getWAConfig(c.env as OpenWAEnv)
     if (!cfgCek.apiKey) {
-      return c.json({
-        error: 'API key OpenWA belum diisi. Isi kolom "API Key OpenWA" di halaman ini lalu simpan, baru aktifkan.'
-      }, 400)
+      itemAktif.value = '0'
+      peringatan = 'URL & sesi tersimpan. Integrasi BELUM diaktifkan karena API key OpenWA belum diisi — isi API key lalu simpan lagi.'
     }
   }
 
-  await c.env.DB.batch(stmts)
+  await c.env.DB.batch(pasangan.map(({ key, value }) => c.env.DB.prepare(
+    'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+  ).bind(key, value)))
   await catatAudit(c.env.DB, c.get('user'), 'ubah', 'wa-pengaturan', '-', 'Ubah pengaturan integrasi WhatsApp')
-  return c.json({ sukses: true })
+  return c.json({ sukses: true, ...(peringatan ? { peringatan } : {}) })
 })
 
 // Status sesi WhatsApp di gateway
@@ -243,15 +246,39 @@ waRoutes.post('/api/admin/wa/uji-koneksi', requireAuth(['owner', 'admin']), asyn
   return c.json({ ok: true, status: s.status, ready: s.status === 'ready' })
 })
 
-// Daftarkan webhook Hiratake ke OpenWA otomatis (secret tetap di server)
-waRoutes.post('/api/admin/wa/webhook/daftar', requireAuth(['owner', 'admin']), async (c) => {
+// Daftarkan webhook Hiratake ke OpenWA otomatis.
+// Bila webhook secret belum ada, dibuatkan otomatis & disimpan — jadi pemilik
+// tidak perlu mengarang teks acak sendiri. Secret tetap di server.
+waRoutes.post('/api/admin/wa/webhook/daftar', requireAuth(['owner']), async (c) => {
   const cfg = await getWAConfig(c.env as OpenWAEnv)
-  const secret = await ambilRahasia(c.env.DB, 'OPENWA_WEBHOOK_SECRET', c.env.OPENWA_WEBHOOK_SECRET)
+  if (!cfg.url || !cfg.session || !cfg.apiKey) {
+    return c.json({ error: 'Lengkapi & simpan dulu URL gateway, nama sesi, dan API key OpenWA di halaman ini.' }, 400)
+  }
+
+  let secret = await ambilRahasia(c.env.DB, 'OPENWA_WEBHOOK_SECRET', c.env.OPENWA_WEBHOOK_SECRET)
+  let secretBaru = false
+  if (!secret) {
+    secret = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+      .map((b) => b.toString(16).padStart(2, '0')).join('')
+    await c.env.DB.prepare(
+      'INSERT INTO pengaturan (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).bind('rahasia_openwa_webhook_secret', secret).run()
+    secretBaru = true
+  }
+
   const webhookUrl = new URL('/api/webhook/openwa', c.req.url).toString()
   const r = await daftarWebhook(cfg, webhookUrl, secret)
-  if (!r.ok) return c.json({ error: r.error }, 502)
-  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'wa-webhook', cfg.session, 'Daftarkan webhook OpenWA otomatis')
-  return c.json({ sukses: true, webhookUrl })
+  if (!r.ok) {
+    let e = r.error || 'Gagal mendaftarkan webhook.'
+    if (/not allowed|private|localhost|loopback|127\.0\.0\.1/i.test(e)) {
+      e = `OpenWA menolak alamat webhook "${webhookUrl}" — biasanya karena localhost / IP privat. ` +
+          `Daftarkan dari server produksi (domain publik, mis. https://domainanda.com), bukan dari lokal.`
+    }
+    return c.json({ error: e }, 502)
+  }
+  await catatAudit(c.env.DB, c.get('user'), 'ubah', 'wa-webhook', cfg.session,
+    secretBaru ? 'Daftarkan webhook + buat webhook secret otomatis' : 'Daftarkan webhook OpenWA otomatis')
+  return c.json({ sukses: true, webhookUrl, secretBaru })
 })
 
 // Cek apakah webhook Hiratake sudah terdaftar di OpenWA (best-effort)

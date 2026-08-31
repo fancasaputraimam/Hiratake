@@ -2370,8 +2370,9 @@ window.waLangkahAksi = async (jenis) => {
       document.getElementById('btn-wa-qr')?.click();
       return;
     } else if (jenis === 'webhook') {
-      await api('/api/admin/wa/webhook/daftar', { method: 'POST' });
-      toast('Webhook didaftarkan ke OpenWA ✅', true);
+      const d = await api('/api/admin/wa/webhook/daftar', { method: 'POST' });
+      toast(d.secretBaru ? 'Webhook terdaftar + webhook secret dibuat otomatis ✅' : 'Webhook didaftarkan ke OpenWA ✅', true);
+      if (typeof loadWaConfig === 'function') loadWaConfig();
     }
   } catch (ex) { toast(ex.message, false); }
   setTimeout(() => { loadWaLangkah(); loadWaStatus(); }, jenis === 'mulai' ? 3500 : 500);
@@ -2427,9 +2428,10 @@ document.getElementById('btn-wa-uji-koneksi')?.addEventListener('click', async (
     info('Mendaftarkan webhook ke OpenWA…', true);
     try {
       const d = await api('/api/admin/wa/webhook/daftar', { method: 'POST' });
-      info('Webhook terdaftar: ' + (d.webhookUrl || 'OK'), true);
-      toast('Webhook didaftarkan ke OpenWA ✅', true);
-      if (typeof loadWaLangkah === 'function') loadWaLangkah();
+      info((d.secretBaru ? 'Webhook secret dibuat otomatis. ' : '') + 'Webhook terdaftar: ' + (d.webhookUrl || 'OK'), true);
+      toast(d.secretBaru ? 'Webhook terdaftar + secret dibuat otomatis ✅' : 'Webhook didaftarkan ke OpenWA ✅', true);
+      if (typeof loadWaConfig === 'function') loadWaConfig();
+      else if (typeof loadWaLangkah === 'function') loadWaLangkah();
     } catch (ex) {
       info(ex.message, false);
       toast(ex.message, false);
@@ -2470,24 +2472,28 @@ document.getElementById('form-wa-config')?.addEventListener('submit', async (e) 
   const btn = document.getElementById('wa-simpan-semua');
   if (btn) btn.disabled = true;
   try {
-    // 1) Kredensial dulu (owner saja) — hanya bila kolomnya diisi & tidak dikunci server
+    // 1) Kredensial dulu (owner saja) — hanya bila kolomnya diisi & tidak dikunci server.
+    //    Kegagalan di sini TIDAK menghentikan penyimpanan pengaturan (URL/sesi/dst).
     const apikey = document.getElementById('wa-in-apikey');
     const secret = document.getElementById('wa-in-secret');
     const kred = {};
     if (apikey && !apikey.disabled && apikey.value.trim()) kred.api_key = apikey.value.trim();
     if (secret && !secret.disabled && secret.value.trim()) kred.webhook_secret = secret.value.trim();
+    let kredError = '';
     if (Object.keys(kred).length) {
       if (ME && ME.role === 'owner') {
-        await api('/api/admin/wa/kredensial', { method: 'PUT', body: JSON.stringify(kred) });
-        if (apikey) apikey.value = '';
-        if (secret) secret.value = '';
+        try {
+          await api('/api/admin/wa/kredensial', { method: 'PUT', body: JSON.stringify(kred) });
+          if (apikey) apikey.value = '';
+          if (secret) secret.value = '';
+        } catch (ke) { kredError = ke.message; }
       } else {
-        toast('Kredensial hanya bisa diubah oleh owner — bagian lain tetap disimpan.', false);
+        kredError = 'kredensial hanya bisa diubah oleh owner';
       }
     }
 
     // 2) Sisa konfigurasi (kunci yang dikunci .env diabaikan server)
-    await api('/api/admin/wa/pengaturan', { method: 'PUT', body: JSON.stringify({
+    const rp = await api('/api/admin/wa/pengaturan', { method: 'PUT', body: JSON.stringify({
       openwa_url: nilai('wa-cfg-url'),
       openwa_session: nilai('wa-cfg-session'),
       openwa_jam_pengingat: nilai('wa-cfg-jam'),
@@ -2503,7 +2509,10 @@ document.getElementById('form-wa-config')?.addEventListener('submit', async (e) 
       openwa_notif_internal: saklar('wa-cfg-notif-internal'),
       openwa_notif_ringkasan: saklar('wa-cfg-notif-ringkasan')
     })});
-    toast('Konfigurasi WhatsApp disimpan ✅');
+
+    if (kredError) toast('Pengaturan tersimpan, tapi kredensial gagal: ' + kredError, false);
+    else if (rp && rp.peringatan) toast(rp.peringatan, false);
+    else toast('Konfigurasi WhatsApp disimpan ✅', true);
     loadWaStatus(); loadWaConfig();
   } catch (ex) { toast(ex.message, false); }
   finally { if (btn) btn.disabled = false; }
